@@ -40,6 +40,7 @@ class eTable: public eGTable
 private:
 	std::vector<Section*> sections;
 	std::set<int> avail;
+	unsigned char m_section_data[4096];
 protected:
 	int createTable(unsigned int nr, const __u8 *data, unsigned int max)
 	{
@@ -53,6 +54,9 @@ protected:
 		if (avail.find(nr) != avail.end())
 			delete sections[nr];
 
+		memset(m_section_data, 0, 4096);
+		memcpy(m_section_data, data, 4096);
+
 		sections.resize(max);
 		sections[nr] = new Section(data);
 		avail.insert(nr);
@@ -63,7 +67,7 @@ protected:
 			else
 				TABLE_eDebugNoNewLine("-");
 				
-		TABLE_eDebug(" %d/%d TID %02x", avail.size(), max, data[0]);
+		TABLE_eDebug(" %zd/%d TID %02x", avail.size(), max, data[0]);
 
 		if (avail.size() == max)
 		{
@@ -74,6 +78,7 @@ protected:
 	}
 public:
 	std::vector<Section*> &getSections() { return sections; }
+	unsigned char* getBufferData() { return m_section_data; }
 	eTable(bool debug=true): eGTable(debug)
 	{
 	}
@@ -100,6 +105,10 @@ class eAUTable: public eAUGTable
 	int first;
 	ePtr<iDVBDemux> m_demux;
 	eMainloop *ml;
+
+	/* needed to detect broken table version handling (seen on some m2ts files) */
+	struct timespec m_prev_table_update;
+	int m_table_cnt;
 public:
 
 	eAUTable()
@@ -119,6 +128,7 @@ public:
 	
 	int begin(eMainloop *m, const eDVBTableSpec &spec, ePtr<iDVBDemux> demux)
 	{
+		m_table_cnt = 0;
 		ml = m;
 		m_demux = demux;
 		first= 1;
@@ -197,6 +207,24 @@ public:
 
 		if (current && (!current->getSpec(spec)))
 		{
+			/* detect broken table version handling (seen on some m2ts files) */
+			if (m_table_cnt)
+			{
+				if (abs(timeout_usec(m_prev_table_update)) > 500000)
+					m_table_cnt = -1;
+				else if (m_table_cnt > 1) // two pmt update within one second
+				{
+					eDebug("Seen two consecutive table version changes within 500ms. "
+					    "This seems broken, so auto update for pid %04x, table %02x is now disabled!!",
+					    spec.pid, spec.tid);
+					m_table_cnt = 0;
+					return;
+				}
+			}
+
+			++m_table_cnt;
+			clock_gettime(CLOCK_MONOTONIC, &m_prev_table_update);
+
 			next = new Table();
 			CONNECT(next->tableReady, eAUTable::slotTableReady);
 			spec.flags &= ~(eDVBTableSpec::tfAnyVersion|eDVBTableSpec::tfThisVersion|eDVBTableSpec::tfHaveTimeout);

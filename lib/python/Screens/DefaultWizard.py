@@ -25,9 +25,10 @@ class DefaultWizard(WizardLanguage, DreamInfoHandler):
 		self["arrowup2"] = MovingPixmap()
 	
 	def setDirectory(self):
-		os_system("mount %s %s" % (resolveFilename(SCOPE_DEFAULTPARTITION), resolveFilename(SCOPE_DEFAULTPARTITIONMOUNTDIR)))
 		self.directory = resolveFilename(SCOPE_DEFAULTPARTITIONMOUNTDIR)
 		self.xmlfile = "defaultwizard.xml"
+		if self.directory:
+			os_system("mount %s %s" % (resolveFilename(SCOPE_DEFAULTPARTITION), self.directory))
         
 	def markDone(self):
 		config.misc.defaultchosen.value = 0
@@ -37,7 +38,7 @@ class DefaultWizard(WizardLanguage, DreamInfoHandler):
 	def statusCallback(self, status, progress):
 		print "statusCallback:", status, progress
 		if status == DreamInfoHandler.STATUS_DONE:
-			self["text"].setText(_("The installation of the default settings is finished. You can now continue configuring your Dreambox by pressing the OK button on the remote control."))
+			self["text"].setText(_("The installation of the default settings is finished. You can now continue configuring your STB by pressing the OK button on the remote control."))
 			self.markDone()
 			self.disableKeys = False
 
@@ -103,12 +104,12 @@ def filescan(**kwargs):
 					ScanPath(path = "dmpkg", with_subdirs = True), 
 					ScanPath(path = "", with_subdirs = False), 
 				], 
-			name = "Dream-Package", 
+			name = "STB-Package", 
 			description = _("Install settings, skins, software..."), 
 			openfnc = filescan_open, )
 
 print "add dreampackage scanner plugin"
-plugins.addPlugin(PluginDescriptor(name="Dream-Package", where = PluginDescriptor.WHERE_FILESCAN, fnc = filescan, internal = True))
+plugins.addPlugin(PluginDescriptor(name="STB-Package", where = PluginDescriptor.WHERE_FILESCAN, fnc = filescan, internal = True))
 print "added"
 
 wizardManager.registerWizard(DefaultWizard, config.misc.defaultchosen.value, priority = 6)

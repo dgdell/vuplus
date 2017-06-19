@@ -4,7 +4,7 @@ from Screens.Screen import Screen
 from Screens.MessageBox import MessageBox
 from Screens.ChoiceBox import ChoiceBox
 from Screens.HelpMenu import HelpableScreen
-from Screens.InfoBarGenerics import InfoBarSeek, InfoBarPVRState, InfoBarCueSheetSupport, InfoBarShowHide, InfoBarNotifications
+from Screens.InfoBarGenerics import InfoBarSeek, InfoBarPVRState, InfoBarCueSheetSupport, InfoBarShowHide, InfoBarNotifications, InfoBarAudioSelection, InfoBarSubtitleSupport
 from Components.ActionMap import ActionMap, NumberActionMap, HelpableActionMap
 from Components.Label import Label
 from Components.Sources.StaticText import StaticText
@@ -39,8 +39,11 @@ class FileBrowser(Screen):
 				currDir = "/media/dvd/"
 			if not pathExists(currDir):
 				currDir = "/"
+			if lastpath == "":  # 'None' is magic to start at the list of mountpoints
+				currDir = None
 
-			self.filelist = FileList(currDir, matchingPattern = "(?i)^.*\.(iso)", useServiceRef = True)
+			inhibitDirs = ["/bin", "/boot", "/dev", "/etc", "/home", "/lib", "/proc", "/sbin", "/share", "/sys", "/tmp", "/usr", "/var"]
+			self.filelist = FileList(currDir, matchingPattern = "(?i)^.*\.(iso|img)", useServiceRef = True)
 			self["filelist"] = self.filelist
 
 		self["FilelistActions"] = ActionMap(["SetupActions"],
@@ -79,6 +82,12 @@ class FileBrowser(Screen):
 					lastpath = (pathname.rstrip("/").rsplit("/",1))[0]
 					print "lastpath video_ts.ifo=", lastpath
 					self.close(pathname)
+				if fileExists(pathname+"VIDEO_TS/VIDEO_TS.IFO"):
+					print "dvd structure found, trying to open..."
+					lastpath = (pathname.rstrip("/").rsplit("/",1))[0]
+					print "lastpath video_ts.ifo=", lastpath
+					pathname += "VIDEO_TS"
+					self.close(pathname)
 			else:
 				lastpath = filename[0:filename.rfind("/")]
 				print "lastpath directory=", lastpath
@@ -88,8 +97,8 @@ class FileBrowser(Screen):
 		self.close(None)
 
 class DVDSummary(Screen):
-	skin = """
-	<screen position="0,0" size="132,64">
+	skin = (
+	"""<screen name="DVDSummary" position="0,0" size="132,64" id="1">
 		<widget source="session.CurrentService" render="Label" position="5,4" size="120,28" font="Regular;12" transparent="1" >
 			<convert type="ServiceName">Name</convert>
 		</widget>
@@ -101,7 +110,20 @@ class DVDSummary(Screen):
 		<widget source="session.CurrentService" render="Progress" position="6,46" size="60,18" borderWidth="1" >
 			<convert type="ServicePosition">Position</convert>
 		</widget>
-	</screen>"""
+	</screen>""",
+	"""<screen name="DVDSummary" position="0,0" size="96,64" id="2">
+		<widget source="session.CurrentService" render="Label" position="0,0" size="96,25" font="Regular;12" transparent="1" >
+			<convert type="ServiceName">Name</convert>
+		</widget>
+		<widget name="DVDPlayer" position="0,26" size="96,12" font="Regular;10" transparent="1" />
+		<widget name="Chapter" position="0,40" size="66,12" font="Regular;10" transparent="1" halign="left" />
+		<widget source="session.CurrentService" render="Label" position="66,40" size="30,12" font="Regular;10" transparent="1" halign="right" >
+			<convert type="ServicePosition">Position</convert>
+		</widget>
+		<widget source="session.CurrentService" render="Progress" position="0,52" size="96,12" borderWidth="1" >
+			<convert type="ServicePosition">Position</convert>
+		</widget>
+	</screen>""")
 
 	def __init__(self, session, parent):
 		Screen.__init__(self, session, parent)
@@ -173,7 +195,7 @@ class ChapterZap(Screen):
 		self.Timer.callback.append(self.keyOK)
 		self.Timer.start(3000, True)
 
-class DVDPlayer(Screen, InfoBarBase, InfoBarNotifications, InfoBarSeek, InfoBarPVRState, InfoBarShowHide, HelpableScreen, InfoBarCueSheetSupport):
+class DVDPlayer(Screen, InfoBarBase, InfoBarNotifications, InfoBarSeek, InfoBarPVRState, InfoBarShowHide, HelpableScreen, InfoBarCueSheetSupport, InfoBarAudioSelection, InfoBarSubtitleSupport):
 	ALLOW_SUSPEND = Screen.SUSPEND_PAUSES
 	ENABLE_RESUME_SUPPORT = True
 	
@@ -222,8 +244,6 @@ class DVDPlayer(Screen, InfoBarBase, InfoBarNotifications, InfoBarSeek, InfoBarP
 		self.saved_config_speeds_backward = config.seek.speeds_backward.value
 		self.saved_config_enter_forward = config.seek.enter_forward.value
 		self.saved_config_enter_backward = config.seek.enter_backward.value
-		self.saved_config_seek_stepwise_minspeed = config.seek.stepwise_minspeed.value
-		self.saved_config_seek_stepwise_repeat = config.seek.stepwise_repeat.value
 		self.saved_config_seek_on_pause = config.seek.on_pause.value
 		self.saved_config_seek_speeds_slowmotion = config.seek.speeds_slowmotion.value
 
@@ -233,8 +253,6 @@ class DVDPlayer(Screen, InfoBarBase, InfoBarNotifications, InfoBarSeek, InfoBarP
 		config.seek.speeds_slowmotion.value = [ ]
 		config.seek.enter_forward.value = "2"
 		config.seek.enter_backward.value = "2"
-		config.seek.stepwise_minspeed.value = "Never"
-		config.seek.stepwise_repeat.value = "3"
 		config.seek.on_pause.value = "play"
 
 	def restore_infobar_seek_config(self):
@@ -243,8 +261,6 @@ class DVDPlayer(Screen, InfoBarBase, InfoBarNotifications, InfoBarSeek, InfoBarP
 		config.seek.speeds_slowmotion.value = self.saved_config_seek_speeds_slowmotion
 		config.seek.enter_forward.value = self.saved_config_enter_forward
 		config.seek.enter_backward.value = self.saved_config_enter_backward
-		config.seek.stepwise_minspeed.value = self.saved_config_seek_stepwise_minspeed
-		config.seek.stepwise_repeat.value = self.saved_config_seek_stepwise_repeat
 		config.seek.on_pause.value = self.saved_config_seek_on_pause
 
 	def __init__(self, session, dvd_device = None, dvd_filelist = [ ], args = None):
@@ -253,10 +269,12 @@ class DVDPlayer(Screen, InfoBarBase, InfoBarNotifications, InfoBarSeek, InfoBarP
 		InfoBarNotifications.__init__(self)
 		InfoBarCueSheetSupport.__init__(self, actionmap = "MediaPlayerCueSheetActions")
 		InfoBarShowHide.__init__(self)
+		InfoBarAudioSelection.__init__(self)
+		InfoBarSubtitleSupport.__init__(self)
 		HelpableScreen.__init__(self)
 		self.save_infobar_seek_config()
 		self.change_infobar_seek_config()
-		InfoBarSeek.__init__(self, useSeekBackHack=False)
+		InfoBarSeek.__init__(self)
 		InfoBarPVRState.__init__(self)
 		self.dvdScreen = self.session.instantiateDialog(DVDOverlay)
 
@@ -332,6 +350,7 @@ class DVDPlayer(Screen, InfoBarBase, InfoBarNotifications, InfoBarSeek, InfoBarP
 				"prevTitle": (self.prevTitle, _("jump back to the previous title")),
 				"tv": (self.askLeavePlayer, _("exit DVD player or return to file browser")),
 				"dvdAudioMenu": (self.enterDVDAudioMenu, _("(show optional DVD audio menu)")),
+				"AudioSelection": (self.enterAudioSelection, _("Select audio track")),
 				"nextAudioTrack": (self.nextAudioTrack, _("switch to the next audio track")),
 				"nextSubtitleTrack": (self.nextSubtitleTrack, _("switch to the next subtitle language")),
 				"nextAngle": (self.nextAngle, _("switch to the next angle")),
@@ -524,6 +543,9 @@ class DVDPlayer(Screen, InfoBarBase, InfoBarNotifications, InfoBarSeek, InfoBarP
 			keys.keyPressed(key)
 		return keys
 
+	def enterAudioSelection(self):
+		self.audioSelection()
+
 	def nextAudioTrack(self):
 		self.sendKey(iServiceKeys.keyUser)
 
@@ -612,6 +634,14 @@ class DVDPlayer(Screen, InfoBarBase, InfoBarNotifications, InfoBarSeek, InfoBarP
 			newref = eServiceReference(4369, 0, val)
 			print "play", newref.toString()
 			if curref is None or curref != newref:
+				if newref.toString().endswith("/VIDEO_TS") or newref.toString().endswith("/"):
+					names = newref.toString().rsplit("/",3)
+					if names[2].startswith("Disk ") or names[2].startswith("DVD "):
+						name = str(names[1]) + " - " + str(names[2])
+					else:
+						name = names[2]
+					print "setting name to: ", self.service
+					newref.setName(str(name))
 				self.session.nav.playService(newref)
 				self.service = self.session.nav.getCurrentService()
 				print "self.service", self.service
@@ -745,5 +775,5 @@ def filescan(**kwargs):
 		)]		
 
 def Plugins(**kwargs):
-	return [PluginDescriptor(name = "DVDPlayer", description = "Play DVDs", where = PluginDescriptor.WHERE_MENU, fnc = menu),
-		 	PluginDescriptor(where = PluginDescriptor.WHERE_FILESCAN, fnc = filescan)]
+	return [PluginDescriptor(name = "DVDPlayer", description = "Play DVDs", where = PluginDescriptor.WHERE_MENU, needsRestart = True, fnc = menu),
+		 	PluginDescriptor(where = PluginDescriptor.WHERE_FILESCAN, needsRestart = True, fnc = filescan)]

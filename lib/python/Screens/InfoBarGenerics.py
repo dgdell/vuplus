@@ -1,4 +1,4 @@
-from ChannelSelection import ChannelSelection, BouquetSelector
+from ChannelSelection import ChannelSelection, BouquetSelector, SilentBouquetSelector
 
 from Components.ActionMap import ActionMap, HelpableActionMap
 from Components.ActionMap import NumberActionMap
@@ -47,10 +47,12 @@ from Menu import MainMenu, mdom
 class InfoBarDish:
 	def __init__(self):
 		self.dishDialog = self.session.instantiateDialog(Dish)
+		self.dishDialog.setAnimationMode(0)
 
 class InfoBarUnhandledKey:
 	def __init__(self):
 		self.unhandledKeyDialog = self.session.instantiateDialog(UnhandledKey)
+		self.unhandledKeyDialog.setAnimationMode(0)
 		self.hideUnhandledKeySymbolTimer = eTimer()
 		self.hideUnhandledKeySymbolTimer.callback.append(self.unhandledKeyDialog.hide)
 		self.checkUnusedTimer = eTimer()
@@ -559,6 +561,12 @@ class InfoBarEPG:
 			cnt = 0
 		else:
 			cnt = len(bouquets)
+		if config.usage.multiepg_ask_bouquet.value:
+			self.openMultiServiceEPGAskBouquet(bouquets, cnt, withCallback)
+		else:
+			self.openMultiServiceEPGSilent(bouquets, cnt, withCallback)
+
+	def openMultiServiceEPGAskBouquet(self, bouquets, cnt, withCallback):
 		if cnt > 1: # show bouquet list
 			if withCallback:
 				self.bouquetSel = self.session.openWithCallback(self.closed, BouquetSelector, bouquets, self.openBouquetEPG, enableWrapAround=True)
@@ -567,6 +575,21 @@ class InfoBarEPG:
 				self.bouquetSel = self.session.open(BouquetSelector, bouquets, self.openBouquetEPG, enableWrapAround=True)
 		elif cnt == 1:
 			self.openBouquetEPG(bouquets[0][1], withCallback)
+
+	def openMultiServiceEPGSilent(self, bouquets, cnt, withCallback):
+		root = self.servicelist.getRoot()
+		rootstr = root.toCompareString()
+		current = 0
+		for bouquet in bouquets:
+			if bouquet[1].toCompareString() == rootstr:
+				break
+			current += 1
+		if current >= cnt:
+			current = 0
+		if cnt > 1: # create bouquet list for bouq+/-
+			self.bouquetSel = SilentBouquetSelector(bouquets, True, self.servicelist.getBouquetNumOffset(root))
+		if cnt >= 1:
+			self.openBouquetEPG(root, withCallback)
 
 	def changeServiceCB(self, direction, epg):
 		if self.serviceSel:
@@ -598,6 +621,7 @@ class InfoBarEPG:
 
 		if list:
 			list.append((_("show single service EPG..."), self.openSingleServiceEPG))
+			list.append((_("Multi EPG"), self.openMultiServiceEPG))
 			self.session.openWithCallback(self.EventInfoPluginChosen, ChoiceBox, title=_("Please choose an extension..."), list = list, skin_name = "EPGExtensionsList")
 		else:
 			self.openSingleServiceEPG()
@@ -665,6 +689,7 @@ class InfoBarRdsDecoder:
 	"""provides RDS and Rass support/display"""
 	def __init__(self):
 		self.rds_display = self.session.instantiateDialog(RdsInfoDisplay)
+		self.rds_display.setAnimationMode(0)
 		self.rass_interactive = None
 
 		self.__event_tracker = ServiceEventTracker(screen=self, eventmap=
@@ -716,7 +741,7 @@ class InfoBarSeek:
 	SEEK_STATE_PAUSE = (1, 0, 0, "||")
 	SEEK_STATE_EOF = (1, 0, 0, "END")
 
-	def __init__(self, actionmap = "InfobarSeekActions", useSeekBackHack=True):
+	def __init__(self, actionmap = "InfobarSeekActions"):
 		self.__event_tracker = ServiceEventTracker(screen=self, eventmap=
 			{
 				iPlayableService.evSeekableStatusChanged: self.__seekableStatusChanged,
@@ -773,20 +798,10 @@ class InfoBarSeek:
 		self.__seekableStatusChanged()
 
 	def makeStateForward(self, n):
-#		minspeed = config.seek.stepwise_minspeed.value
-#		repeat = int(config.seek.stepwise_repeat.value)
-#		if minspeed != "Never" and n >= int(minspeed) and repeat > 1:
-#			return (0, n * repeat, repeat, ">> %dx" % n)
-#		else:
-			return (0, n, 0, ">> %dx" % n)
+		return (0, n, 0, ">> %dx" % n)
 
 	def makeStateBackward(self, n):
-#		minspeed = config.seek.stepwise_minspeed.value
-#		repeat = int(config.seek.stepwise_repeat.value)
-#		if minspeed != "Never" and n >= int(minspeed) and repeat > 1:
-#			return (0, -n * repeat, repeat, "<< %dx" % n)
-#		else:
-			return (0, -n, 0, "<< %dx" % n)
+		return (0, -n, 0, "<< %dx" % n)
 
 	def makeStateSlowMotion(self, n):
 		return (0, 0, n, "/%d" % n)
@@ -1093,6 +1108,7 @@ class InfoBarPVRState:
 	def __init__(self, screen=PVRState, force_show = False):
 		self.onPlayStateChanged.append(self.__playStateChanged)
 		self.pvrStateDialog = self.session.instantiateDialog(screen)
+		self.pvrStateDialog.setAnimationMode(0)
 		self.onShow.append(self._mayShow)
 		self.onHide.append(self.pvrStateDialog.hide)
 		self.force_show = force_show
@@ -1362,6 +1378,7 @@ class InfoBarExtensions:
 			answer[1][1]()
 
 from Tools.BoundFunction import boundFunction
+import inspect
 
 # depends on InfoBarExtensions
 
@@ -1373,9 +1390,13 @@ class InfoBarPlugins:
 		return name
 
 	def getPluginList(self):
-		list = [((boundFunction(self.getPluginName, p.name), boundFunction(self.runPlugin, p), lambda: True), None, p.name) for p in plugins.getPlugins(where = PluginDescriptor.WHERE_EXTENSIONSMENU)]
-		list.sort(key = lambda e: e[2]) # sort by name
-		return list
+		l = []
+		for p in plugins.getPlugins(where = PluginDescriptor.WHERE_EXTENSIONSMENU):
+		  args = inspect.getargspec(p.__call__)[0]
+		  if len(args) == 1 or len(args) == 2 and isinstance(self, InfoBarChannelSelection):
+			  l.append(((boundFunction(self.getPluginName, p.name), boundFunction(self.runPlugin, p), lambda: True), None, p.name))
+		l.sort(key = lambda e: e[2]) # sort by name
+		return l
 
 	def runPlugin(self, plugin):
 		if isinstance(self, InfoBarChannelSelection):
@@ -1442,6 +1463,7 @@ class InfoBarPiP:
 			self.session.pipshown = False
 		else:
 			self.session.pip = self.session.instantiateDialog(PictureInPicture)
+			self.session.pip.setAnimationMode(0)
 			self.session.pip.show()
 			newservice = self.session.nav.getCurrentlyPlayingServiceReference()
 			if self.session.pip.playService(newservice):
@@ -1533,28 +1555,30 @@ class InfoBarInstantRecord:
 
 		recording = RecordTimerEntry(serviceref, begin, end, name, description, eventid, dirname = preferredInstantRecordPath())
 		recording.dontSave = True
-		
+
 		if event is None or limitEvent == False:
 			recording.autoincrease = True
-			if recording.setAutoincreaseEnd():
-				self.session.nav.RecordTimer.record(recording)
-				self.recording.append(recording)
+			recording.setAutoincreaseEnd()
+
+		simulTimerList = self.session.nav.RecordTimer.record(recording)
+
+		if simulTimerList is None:	# no conflict
+			self.recording.append(recording)
 		else:
-				simulTimerList = self.session.nav.RecordTimer.record(recording)
-				if simulTimerList is not None:	# conflict with other recording
-					name = simulTimerList[1].name
-					name_date = ' '.join((name, strftime('%c', localtime(simulTimerList[1].begin))))
-					print "[TIMER] conflicts with", name_date
-					recording.autoincrease = True	# start with max available length, then increment
-					if recording.setAutoincreaseEnd():
-						self.session.nav.RecordTimer.record(recording)
-						self.recording.append(recording)
-						self.session.open(MessageBox, _("Record time limited due to conflicting timer %s") % name_date, MessageBox.TYPE_INFO)
-					else:
-						self.session.open(MessageBox, _("Couldn't record due to conflicting timer %s") % name, MessageBox.TYPE_INFO)
-					recording.autoincrease = False
-				else:
+			if len(simulTimerList) > 1: # with other recording
+				name = simulTimerList[1].name
+				name_date = ' '.join((name, strftime('%c', localtime(simulTimerList[1].begin))))
+				print "[TIMER] conflicts with", name_date
+				recording.autoincrease = True	# start with max available length, then increment
+				if recording.setAutoincreaseEnd():
+					self.session.nav.RecordTimer.record(recording)
 					self.recording.append(recording)
+					self.session.open(MessageBox, _("Record time limited due to conflicting timer %s") % name_date, MessageBox.TYPE_INFO)
+				else:
+					self.session.open(MessageBox, _("Couldn't record due to conflicting timer %s") % name, MessageBox.TYPE_INFO)
+			else:
+				self.session.open(MessageBox, _("Couldn't record due to invalid service %s") % serviceref, MessageBox.TYPE_INFO)
+			recording.autoincrease = False
 
 	def isInstantRecordRunning(self):
 		print "self.recording:", self.recording
@@ -1635,6 +1659,11 @@ class InfoBarInstantRecord:
 		dir = preferredInstantRecordPath()
 		if not dir or not fileExists(dir, 'w'):
 			dir = defaultMoviePath()
+
+		if not fileExists("/hdd", 0):
+			print "not found /hdd"
+			system("ln -s /media/hdd /hdd")
+#
 		try:
 			stat = os_stat(dir)
 		except:
@@ -1672,126 +1701,11 @@ class InfoBarAudioSelection:
 			})
 
 	def audioSelection(self):
-		service = self.session.nav.getCurrentService()
-		self.audioTracks = audio = service and service.audioTracks()
-		n = audio and audio.getNumberOfTracks() or 0
-		tlist = []
-		if n > 0:
-			self.audioChannel = service.audioChannel()
-
-			idx = 0
-			while idx < n:
-				cnt = 0
-				i = audio.getTrackInfo(idx)
-				languages = i.getLanguage().split('/')
-				description = i.getDescription()
-				language = ""
-
-				for lang in languages:
-					if cnt:
-						language += ' / '
-					if LanguageCodes.has_key(lang):
-						language += LanguageCodes[lang][0]
-					else:
-						language += lang
-					cnt += 1
-
-				if len(description):
-					description += " (" + language + ")"
-				else:
-					description = language
-
-				tlist.append((description, idx))
-				idx += 1
-
-			tlist.sort(key=lambda x: x[0])
-
-			selectedAudio = self.audioTracks.getCurrentTrack()
-
-			selection = 0
-
-			for x in tlist:
-				if x[1] != selectedAudio:
-					selection += 1
-				else:
-					break
-
-			availableKeys = []
-			usedKeys = []
-
-			if SystemInfo["CanDownmixAC3"]:
-				flist = [(_("AC3 downmix") + " - " +(_("Off"), _("On"))[config.av.downmix_ac3.value and 1 or 0], "CALLFUNC", self.changeAC3Downmix),
-					((_("Left"), _("Stereo"), _("Right"))[self.audioChannel.getCurrentChannel()], "mode")]
-				usedKeys.extend(["red", "green"])
-				availableKeys.extend(["yellow", "blue"])
-				selection += 2
-			else:
-				flist = [((_("Left"), _("Stereo"), _("Right"))[self.audioChannel.getCurrentChannel()], "mode")]
-				usedKeys.extend(["red"])
-				availableKeys.extend(["green", "yellow", "blue"])
-				selection += 1
-
-			if hasattr(self, "runPlugin"):
-				class PluginCaller:
-					def __init__(self, fnc, *args):
-						self.fnc = fnc
-						self.args = args
-					def __call__(self, *args, **kwargs):
-						self.fnc(*self.args)
-
-				Plugins = [ (p.name, PluginCaller(self.runPlugin, p)) for p in plugins.getPlugins(where = PluginDescriptor.WHERE_AUDIOMENU) ]
-
-				for p in Plugins:
-					selection += 1
-					flist.append((p[0], "CALLFUNC", p[1]))
-					if availableKeys:
-						usedKeys.append(availableKeys[0])
-						del availableKeys[0]
-					else:
-						usedKeys.append("")
-
-			flist.append(("--", ""))
-			usedKeys.append("")
-			selection += 1
-
-			keys = usedKeys + [ "1", "2", "3", "4", "5", "6", "7", "8", "9", "0" ] + [""] * n
-			self.session.openWithCallback(self.audioSelected, ChoiceBox, title=_("Select audio track"), list = flist + tlist, selection = selection, keys = keys, skin_name = "AudioTrackSelection")
-		else:
-			del self.audioTracks
-
-	def changeAC3Downmix(self, arg):
-		choicelist = self.session.current_dialog["list"]
-		list = choicelist.list
-		t = list[0][1]
-		list[0][1]=(t[0], t[1], t[2], t[3], t[4], t[5], t[6],
-			_("AC3 downmix") + " - " + (_("On"), _("Off"))[config.av.downmix_ac3.value and 1 or 0])
-		choicelist.setList(list)
-		if config.av.downmix_ac3.value:
-			config.av.downmix_ac3.value = False
-		else:
-			config.av.downmix_ac3.value = True
-		config.av.downmix_ac3.save()
-
-	def audioSelected(self, audio):
-		if audio is not None:
-			if isinstance(audio[1], str):
-				if audio[1] == "mode":
-					keys = ["red", "green", "yellow"]
-					selection = self.audioChannel.getCurrentChannel()
-					tlist = ((_("left"), 0), (_("stereo"), 1), (_("right"), 2))
-					self.session.openWithCallback(self.modeSelected, ChoiceBox, title=_("Select audio mode"), list = tlist, selection = selection, keys = keys, skin_name ="AudioModeSelection")
-			else:
-				del self.audioChannel
-				if self.session.nav.getCurrentService().audioTracks().getNumberOfTracks() > audio[1]:
-					self.audioTracks.selectTrack(audio[1])
-		else:
-			del self.audioChannel
-		del self.audioTracks
-
-	def modeSelected(self, mode):
-		if mode is not None:
-			self.audioChannel.selectChannel(mode[1])
-		del self.audioChannel
+		from Screens.AudioSelection import AudioSelection
+		self.session.openWithCallback(self.audioSelected, AudioSelection, infobar=self)
+		
+	def audioSelected(self, ret=None):
+		print "[infobar::audioSelected]", ret
 
 class InfoBarSubserviceSelection:
 	def __init__(self):
@@ -1918,6 +1832,67 @@ class InfoBarSubserviceSelection:
 			self.bsel.close(True)
 		else:
 			del self.selectedSubservice
+
+from Components.Sources.HbbtvApplication import HbbtvApplication
+gHbbtvApplication = HbbtvApplication()
+class InfoBarRedButton:
+	def __init__(self):
+		if not (config.misc.rcused.value == 1):
+			self["RedButtonActions"] = HelpableActionMap(self, "InfobarRedButtonActions",
+				{
+					"activateRedButton": (self.activateRedButton, _("Red button...")),
+				})
+			self["HbbtvApplication"] = gHbbtvApplication
+		else:
+			self["HbbtvApplication"] = Boolean(fixed=0)
+			self["HbbtvApplication"].name = "" #is this a hack?
+			
+		self.onHBBTVActivation = [ ]
+		self.onRedButtonActivation = [ ]
+		self.onReadyForAIT = [ ]
+		self.__et = ServiceEventTracker(screen=self, eventmap=
+			{
+				iPlayableService.evHBBTVInfo: self.detectedHbbtvApplication,
+				iPlayableService.evUpdatedInfo: self.updateInfomation
+			})
+
+	def updateAIT(self, orgId=0):
+		for x in self.onReadyForAIT:
+			try:
+				x(orgId)
+			except Exception, ErrMsg: 
+				print ErrMsg
+				#self.onReadyForAIT.remove(x)
+
+	def updateInfomation(self):
+		try:
+			self["HbbtvApplication"].setApplicationName("")
+			self.updateAIT()
+		except Exception, ErrMsg:
+			pass
+		
+	def detectedHbbtvApplication(self):
+		service = self.session.nav.getCurrentService()
+		info = service and service.info()
+		try:
+			for x in info.getInfoObject(iServiceInformation.sHBBTVUrl):
+				print x
+				if x[0] in (-1, 1):
+					self.updateAIT(x[3])
+					self["HbbtvApplication"].setApplicationName(x[1])
+					break
+		except Exception, ErrMsg:
+			pass
+
+	def activateRedButton(self):
+		service = self.session.nav.getCurrentService()
+		info = service and service.info()
+		if info and info.getInfoString(iServiceInformation.sHBBTVUrl) != "":
+			for x in self.onHBBTVActivation:
+				x()
+		elif False: # TODO: other red button services
+			for x in self.onRedButtonActivation:
+				x()
 
 class InfoBarAdditionalInfo:
 	def __init__(self):
@@ -2084,20 +2059,21 @@ class InfoBarCueSheetSupport:
 		return True
 
 	def jumpPreviousMark(self):
-		# we add 2 seconds, so if the play position is <2s after
+		# we add 5 seconds, so if the play position is <5s after
 		# the mark, the mark before will be used
 		self.jumpPreviousNextMark(lambda x: -x-5*90000, start=True)
 
 	def jumpNextMark(self):
-		if not self.jumpPreviousNextMark(lambda x: x):
+		if not self.jumpPreviousNextMark(lambda x: x-90000):
 			self.doSeek(-1)
 
 	def getNearestCutPoint(self, pts, cmp=abs, start=False):
 		# can be optimized
-		beforecut = False
+		beforecut = True
 		nearest = None
+		bestdiff = -1
+		instate = True
 		if start:
-			beforecut = True
 			bestdiff = cmp(0 - pts)
 			if bestdiff >= 0:
 				nearest = [0, False]
@@ -2106,14 +2082,19 @@ class InfoBarCueSheetSupport:
 				beforecut = False
 				if cp[1] == self.CUT_TYPE_IN:  # Start is here, disregard previous marks
 					diff = cmp(cp[0] - pts)
-					if diff >= 0:
+					if start and diff >= 0:
 						nearest = cp
 						bestdiff = diff
 					else:
 						nearest = None
-			if cp[1] in (self.CUT_TYPE_MARK, self.CUT_TYPE_LAST):
+						bestdiff = -1
+			if cp[1] == self.CUT_TYPE_IN:
+				instate = True
+			elif cp[1] == self.CUT_TYPE_OUT:
+				instate = False
+			elif cp[1] in (self.CUT_TYPE_MARK, self.CUT_TYPE_LAST):
 				diff = cmp(cp[0] - pts)
-				if diff >= 0 and (nearest is None or bestdiff > diff):
+				if instate and diff >= 0 and (nearest is None or bestdiff > diff):
 					nearest = cp
 					bestdiff = diff
 		return nearest
@@ -2251,6 +2232,7 @@ class InfoBarSubtitleSupport(object):
 	def __init__(self):
 		object.__init__(self)
 		self.subtitle_window = self.session.instantiateDialog(SubtitleDisplay)
+		self.subtitle_window.setAnimationMode(0)
 		self.__subtitles_enabled = False
 
 		self.__event_tracker = ServiceEventTracker(screen=self, eventmap=

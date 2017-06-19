@@ -8,7 +8,7 @@ from Components.MenuList import MenuList
 from Components.ServiceEventTracker import ServiceEventTracker, InfoBarBase
 profile("ChannelSelection.py 1")
 from EpgSelection import EPGSelection
-from enigma import eServiceReference, eEPGCache, eServiceCenter, eRCInput, eTimer, eDVBDB, iPlayableService, iServiceInformation, getPrevAsciiCode
+from enigma import eServiceReference, eEPGCache, eServiceCenter, eRCInput, eTimer, eDVBDB, iPlayableService, iServiceInformation, getPrevAsciiCode, eEnv
 from Components.config import config, ConfigSubsection, ConfigText
 from Tools.NumericalTextInput import NumericalTextInput
 profile("ChannelSelection.py 2")
@@ -20,7 +20,6 @@ from Components.Sources.ServiceEvent import ServiceEvent
 profile("ChannelSelection.py 2.3")
 from Components.Input import Input
 profile("ChannelSelection.py 3")
-from Components.ParentalControl import parentalControl
 from Components.ChoiceList import ChoiceList, ChoiceEntryComponent
 from Components.SystemInfo import SystemInfo
 from Screens.InputBox import InputBox, PinInput
@@ -66,6 +65,24 @@ class BouquetSelector(Screen):
 	def cancelClick(self):
 		self.close(False)
 
+class SilentBouquetSelector:
+	def __init__(self, bouquets, enableWrapAround=False, current=0):
+		self.bouquets = [b[1] for b in bouquets]
+		self.pos = current
+		self.count = len(bouquets)
+		self.enableWrapAround = enableWrapAround
+
+	def up(self):
+		if self.pos > 0 or self.enableWrapAround:
+			self.pos = (self.pos - 1) % self.count
+
+	def down(self):
+		if self.pos < (self.count - 1) or self.enableWrapAround:
+			self.pos = (self.pos + 1) % self.count
+
+	def getCurrent(self):
+		return self.bouquets[self.pos]
+
 # csel.bouquet_mark_edit values
 OFF = 0
 EDIT_BOUQUET = 1
@@ -77,6 +94,7 @@ def append_when_current_valid(current, menu, args, level = 0, key = ""):
 
 class ChannelContextMenu(Screen):
 	def __init__(self, session, csel):
+
 		Screen.__init__(self, session)
 		#raise Exception("we need a better summary screen here")
 		self.csel = csel
@@ -106,14 +124,22 @@ class ChannelContextMenu(Screen):
 				isPlayable = not (current_sel_flags & (eServiceReference.isMarker|eServiceReference.isDirectory))
 				if isPlayable:
 					if config.ParentalControl.configured.value:
+						from Components.ParentalControl import parentalControl
 						if parentalControl.getProtectionLevel(csel.getCurrentSelection().toCompareString()) == -1:
 							append_when_current_valid(current, menu, (_("add to parental protection"), boundFunction(self.addParentalProtection, csel.getCurrentSelection())), level = 0)
 						else:
 							append_when_current_valid(current, menu, (_("remove from parental protection"), boundFunction(self.removeParentalProtection, csel.getCurrentSelection())), level = 0)
 					if haveBouquets:
-						append_when_current_valid(current, menu, (_("add service to bouquet"), self.addServiceToBouquetSelected), level = 0)
+						bouquets = self.csel.getBouquetList()
+						if bouquets is None:
+							bouquetCnt = 0
+						else:
+							bouquetCnt = len(bouquets)
+						if not inBouquet or bouquetCnt > 1:
+							append_when_current_valid(current, menu, (_("add service to bouquet"), self.addServiceToBouquetSelected), level = 0)
 					else:
-						append_when_current_valid(current, menu, (_("add service to favourites"), self.addServiceToBouquetSelected), level = 0)
+						if not inBouquet:
+							append_when_current_valid(current, menu, (_("add service to favourites"), self.addServiceToBouquetSelected), level = 0)
 				else:
 					if current_root.getPath().find('FROM SATELLITES') != -1:
 						append_when_current_valid(current, menu, (_("remove selected satellite"), self.removeSatelliteServices), level = 0)
@@ -184,6 +210,7 @@ class ChannelContextMenu(Screen):
 		self.close()
 
 	def addParentalProtection(self, service):
+		from Components.ParentalControl import parentalControl
 		parentalControl.protectService(service.toCompareString())
 		self.close()
 
@@ -192,6 +219,7 @@ class ChannelContextMenu(Screen):
 
 	def pinEntered(self, service, result):
 		if result:
+			from Components.ParentalControl import parentalControl
 			parentalControl.unProtectService(service)
 			self.close()
 		else:
@@ -203,6 +231,7 @@ class ChannelContextMenu(Screen):
 		if self.session.pipshown:
 			del self.session.pip
 		self.session.pip = self.session.instantiateDialog(PictureInPicture)
+		self.session.pip.setAnimationMode(0)
 		self.session.pip.show()
 		newservice = self.csel.servicelist.getCurrent()
 		if self.session.pip.playService(newservice):
@@ -223,7 +252,7 @@ class ChannelContextMenu(Screen):
 		if cnt > 1: # show bouquet list
 			self.bsel = self.session.openWithCallback(self.bouquetSelClosed, BouquetSelector, bouquets, self.addCurrentServiceToBouquet)
 		elif cnt == 1: # add to only one existing bouquet
-			self.addCurrentServiceToBouquet(bouquets[0][1])
+			self.addCurrentServiceToBouquet(bouquets[0][1], closeBouquetSelection = False)
 
 	def bouquetSelClosed(self, recursive):
 		self.bsel = None
@@ -257,12 +286,12 @@ class ChannelContextMenu(Screen):
 			self.csel.addMarker(marker)
 		self.close()
 
-	def addCurrentServiceToBouquet(self, dest):
+	def addCurrentServiceToBouquet(self, dest, closeBouquetSelection = True):
 		self.csel.addServiceToBouquet(dest)
 		if self.bsel is not None:
 			self.bsel.close(True)
 		else:
-			self.close(True) # close bouquet selection
+			self.close(closeBouquetSelection) # close bouquet selection
 
 	def removeCurrentService(self):
 		self.csel.removeCurrentService()
@@ -534,7 +563,7 @@ class ChannelSelectionEdit:
 			refstr = refstr[pos+14:]
 			pos = refstr.find('"')
 			if pos != -1:
-				filename = '/etc/enigma2/' + refstr[:pos] # FIXMEEE !!! HARDCODED /etc/enigma2
+				filename = eEnv.resolve('${sysconfdir}/enigma2/') + refstr[:pos]
 		self.removeCurrentService()
 		try:
 			if filename is not None:
@@ -1046,7 +1075,13 @@ class ChannelSelectionBase(Screen):
 			self.servicelist.moveToChar(charstr[0])
 
 	def keyAsciiCode(self):
-		unichar = unichr(getPrevAsciiCode())
+		#unichar = unichr(getPrevAsciiCode())
+		from Components.config import getCharValue
+		unichar = getCharValue(getPrevAsciiCode())
+		if unichar is None:
+			return
+		if len(str(unichar)) > 1:
+			return
 		charstr = unichar.encode("utf-8")
 		if len(charstr) == 1:
 			self.servicelist.moveToChar(charstr[0])
@@ -1397,12 +1432,13 @@ class ChannelSelectionRadio(ChannelSelectionBase, ChannelSelectionEdit, ChannelS
 		self.onLayoutFinish.append(self.onCreate)
 
 		self.info = session.instantiateDialog(RadioInfoBar) # our simple infobar
+		self.info.setAnimationMode(0)
 
 		self["actions"] = ActionMap(["OkCancelActions", "TvRadioActions"],
 			{
-				"keyTV": self.closeRadio,
-				"keyRadio": self.closeRadio,
-				"cancel": self.closeRadio,
+				"keyTV": self.cancel,
+				"keyRadio": self.cancel,
+				"cancel": self.cancel,
 				"ok": self.channelSelected,
 			})
 
@@ -1440,7 +1476,7 @@ class ChannelSelectionRadio(ChannelSelectionBase, ChannelSelectionEdit, ChannelS
 		self["RdsActions"].setEnabled(state)
 ########## RDS Radiotext / Rass Support END
 
-	def closeRadio(self):
+	def cancel(self):
 		self.infobar.rds_display.onRassInteractivePossibilityChanged.remove(self.RassInteractivePossibilityChanged)
 		self.info.hide()
 		#set previous tv service

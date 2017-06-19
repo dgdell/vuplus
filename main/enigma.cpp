@@ -9,15 +9,13 @@
 #include <lib/driver/rc.h>
 #include <lib/base/ioprio.h>
 #include <lib/base/ebase.h>
+#include <lib/base/eenv.h>
 #include <lib/base/eerror.h>
 #include <lib/base/init.h>
 #include <lib/base/init_num.h>
-#include <lib/gdi/gfbdc.h>
+#include <lib/gdi/gmaindc.h>
 #include <lib/gdi/glcddc.h>
 #include <lib/gdi/grc.h>
-#ifdef WITH_SDL
-#include <lib/gdi/sdl.h>
-#endif
 #include <lib/gdi/epng.h>
 #include <lib/gdi/font.h>
 #include <lib/gui/ebutton.h>
@@ -30,10 +28,9 @@
 #include <lib/python/python.h>
 
 #include "bsod.h"
+#include "version_info.h"
 
-#ifdef HAVE_GSTREAMER
 #include <gst/gst.h>
-#endif
 
 #ifdef OBJECT_DEBUG
 int object_total_remaining;
@@ -135,12 +132,10 @@ int main(int argc, char **argv)
 	atexit(object_dump);
 #endif
 
-#ifdef HAVE_GSTREAMER
 	gst_init(&argc, &argv);
-#endif
 
 	// set pythonpath if unset
-	setenv("PYTHONPATH", LIBDIR "/enigma2/python", 0);
+	setenv("PYTHONPATH", eEnv::resolve("${libdir}/enigma2/python").c_str(), 0);
 	printf("PYTHONPATH: %s\n", getenv("PYTHONPATH"));
 	
 	bsodLogInit();
@@ -149,15 +144,10 @@ int main(int argc, char **argv)
 	eMain main;
 
 #if 1
-#ifdef WITH_SDL
-	ePtr<gSDLDC> my_dc;
-	gSDLDC::getInstance(my_dc);
-#else
-	ePtr<gFBDC> my_dc;
-	gFBDC::getInstance(my_dc);
+	ePtr<gMainDC> my_dc;
+	gMainDC::getInstance(my_dc);
 	
-	int double_buffer = my_dc->haveDoubleBuffering();
-#endif
+	//int double_buffer = my_dc->haveDoubleBuffering();
 
 	ePtr<gLCDDC> my_lcd_dc;
 	gLCDDC::getInstance(my_lcd_dc);
@@ -172,11 +162,11 @@ int main(int argc, char **argv)
 		eTextPara::forceReplacementGlyph(i);
 
 	eWidgetDesktop dsk(eSize(720, 576));
-	eWidgetDesktop dsk_lcd(eSize(132, 64));
-	
+	eWidgetDesktop dsk_lcd(my_lcd_dc->size());
+
 	dsk.setStyleID(0);
-	dsk_lcd.setStyleID(1);
-	
+	dsk_lcd.setStyleID(my_lcd_dc->size().width() == 96 ? 2 : 1);
+
 /*	if (double_buffer)
 	{
 		eDebug(" - double buffering found, enable buffered graphics mode.");
@@ -190,7 +180,7 @@ int main(int argc, char **argv)
 	dsk_lcd.setDC(my_lcd_dc);
 
 	ePtr<gPixmap> m_pm;
-	loadPNG(m_pm, DATADIR "/enigma2/skin_default/pal.png");
+	loadPNG(m_pm, eEnv::resolve("${datadir}/enigma2/skin_default/pal.png").c_str());
 	if (!m_pm)
 	{
 		eFatal("pal.png not found!");
@@ -213,14 +203,16 @@ int main(int argc, char **argv)
 		ePtr<gPixmap> wait[MAX_SPINNER];
 		for (i=0; i<MAX_SPINNER; ++i)
 		{
-			char filename[strlen(DATADIR) + 41];
-			sprintf(filename, DATADIR "/enigma2/skin_default/spinner/wait%d.png", i + 1);
-			loadPNG(wait[i], filename);
+			char filename[64];
+			std::string rfilename;
+			snprintf(filename, sizeof(filename), "${datadir}/enigma2/skin_default/spinner/wait%d.png", i + 1);
+			rfilename = eEnv::resolve(filename);
+			loadPNG(wait[i], rfilename.c_str());
 			
 			if (!wait[i])
 			{
 				if (!i)
-					eDebug("failed to load %s! (%m)", filename);
+					eDebug("failed to load %s! (%m)", rfilename.c_str());
 				else
 					eDebug("found %d spinner!\n", i);
 				break;
@@ -243,7 +235,7 @@ int main(int argc, char **argv)
 	setIoPrio(IOPRIO_CLASS_BE, 3);
 
 //	python.execute("mytest", "__main__");
-	python.execFile("/usr/lib/enigma2/python/mytest.py");
+	python.execFile(eEnv::resolve("${libdir}/enigma2/python/mytest.py").c_str());
 
 	extern void setFullsize(); // definend in lib/gui/evideo.cpp
 	setFullsize();
@@ -259,8 +251,9 @@ int main(int argc, char **argv)
 
 	{
 		gPainter p(my_lcd_dc);
-		p.resetClip(eRect(0, 0, 132, 64));
+		p.resetClip(eRect(ePoint(0, 0), my_lcd_dc->size()));
 		p.clear();
+		p.flush();
 	}
 
 	return exit_code;
@@ -274,11 +267,6 @@ eWidgetDesktop *getDesktop(int which)
 eApplication *getApplication()
 {
 	return eApp;
-}
-
-void runMainloop()
-{
-	eApp->runLoop();
 }
 
 void quitMainloop(int exitCode)
@@ -305,22 +293,30 @@ void quitMainloop(int exitCode)
 	eApp->quit(0);
 }
 
-#include "version.h"
+static void sigterm_handler(int num)
+{
+	quitMainloop(128 + num);
+}
+
+void runMainloop()
+{
+	struct sigaction act;
+
+	act.sa_handler = sigterm_handler;
+	act.sa_flags = SA_RESTART;
+
+	if (sigemptyset(&act.sa_mask) == -1)
+		perror("sigemptyset");
+	if (sigaction(SIGTERM, &act, 0) == -1)
+		perror("SIGTERM");
+
+	eApp->runLoop();
+}
 
 const char *getEnigmaVersionString()
 {
-	std::string date =
-#ifdef ENIGMA2_LAST_CHANGE_DATE
-		ENIGMA2_LAST_CHANGE_DATE;
-#else
-		__DATE__;
-#endif
-	std::string branch =
-#ifdef ENIGMA2_BRANCH
-		ENIGMA2_BRANCH;
-#else
-		"HEAD";
-#endif
+	std::string date = enigma2_date;
+	std::string branch = enigma2_branch;
 	return std::string(date + '-' + branch).c_str();
 }
 
@@ -331,3 +327,20 @@ void dump_malloc_stats(void)
 	struct mallinfo mi = mallinfo();
 	eDebug("MALLOC: %d total", mi.uordblks);
 }
+
+#ifdef USE_LIBVUGLES2
+#include <vuplus_gles.h>
+
+void setAnimation_current(int a)
+{
+	gles_set_animation_func(a);
+}
+
+void setAnimation_speed(int speed)
+{
+	gles_set_animation_speed(speed);
+}
+#else
+void setAnimation_current(int a) {}
+void setAnimation_speed(int speed) {}
+#endif

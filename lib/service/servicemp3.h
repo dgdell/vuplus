@@ -1,7 +1,6 @@
 #ifndef __servicemp3_h
 #define __servicemp3_h
 
-#ifdef HAVE_GSTREAMER
 #include <lib/base/message.h>
 #include <lib/service/iservice.h>
 #include <lib/dvb/pmt.h>
@@ -47,7 +46,7 @@ public:
 typedef struct _GstElement GstElement;
 
 typedef enum { atUnknown, atMPEG, atMP3, atAC3, atDTS, atAAC, atPCM, atOGG, atFLAC } audiotype_t;
-typedef enum { stPlainText, stSSA, stSRT } subtype_t;
+typedef enum { stUnknown, stPlainText, stSSA, stASS, stSRT, stVOB, stPGS } subtype_t;
 typedef enum { ctNone, ctMPEGTS, ctMPEGPS, ctMKV, ctAVI, ctMP4, ctVCD, ctCDA } containertype_t;
 
 class eServiceMP3: public iPlayableService, public iPauseableService,
@@ -168,12 +167,18 @@ public:
 		int bufferPercent;
 		int avgInRate;
 		int avgOutRate;
-		long long bufferingLeft;
+		int64_t bufferingLeft;
 		bufferInfo()
 			:bufferPercent(0), avgInRate(0), avgOutRate(0), bufferingLeft(-1)
 		{
 		}
 	};
+	struct errorInfo
+	{
+		std::string error_message;
+		std::string missing_codec;
+	};
+
 private:
 	static int pcm_delay;
 	static int ac3_delay;
@@ -184,44 +189,92 @@ private:
 	std::vector<subtitleStream> m_subtitleStreams;
 	eSubtitleWidget *m_subtitle_widget;
 	int m_currentTrickRatio;
-	ePtr<eTimer> m_seekTimeout;
-	void seekTimeoutCB();
 	friend class eServiceFactoryMP3;
 	eServiceReference m_ref;
 	int m_buffer_size;
+	//vuplus
+	int m_is_hls_stream;
+
 	bufferInfo m_bufferInfo;
+	errorInfo m_errorInfo;
 	eServiceMP3(eServiceReference ref);
 	Signal2<void,iPlayableService*,int> m_event;
 	enum
 	{
 		stIdle, stRunning, stStopped,
+        };
+        int m_state;
+        GstElement *m_gst_playbin, *audioSink, *videoSink;
+        GstTagList *m_stream_tags;
+
+        struct Message
+        {
+                Message()
+                        :type(-1)
+                {}
+                Message(int type)
+                        :type(type)
+                {}
+                Message(int type, GstPad *pad)
+                        :type(type)
+                {
+                        d.pad=pad;
+                }
+				Message(int type, GstBuffer *buffer)
+                        :type(type)
+                {
+                        d.buffer=buffer;
+                }
+
+                int type;
+                union {
+                        GstBuffer *buffer; // for msg type 2
+                        GstPad *pad; // for msg type 3
+                } d;
+        };
+
+        eFixedMessagePump<Message> m_pump;
+
+        audiotype_t gstCheckAudioPad(GstStructure* structure);
+#if GST_VERSION_MAJOR < 1
+        static gint match_sinktype(GstElement *element, gpointer type);
+#else
+        static gint match_sinktype(const GValue *velement, const gchar *type);
+#endif
+        void gstBusCall(GstBus *bus, GstMessage *msg);
+        static GstBusSyncReply gstBusSyncHandler(GstBus *bus, GstMessage *message, gpointer user_data);
+	static void gstTextpadHasCAPS(GstPad *pad, GParamSpec * unused, gpointer user_data);
+	void gstTextpadHasCAPS_synced(GstPad *pad);
+        static void gstCBsubtitleAvail(GstElement *element, GstBuffer *buffer, gpointer user_data);
+        GstPad* gstCreateSubtitleSink(eServiceMP3* _this, subtype_t type);
+	void gstPoll(const Message&);
+        static void gstHTTPSourceSetAgent(GObject *source, GParamSpec *unused, gpointer user_data);
+
+	struct SubtitlePage
+	{
+		enum { Unknown, Pango, Vob } type;
+		ePangoSubtitlePage pango_page;
+		eVobSubtitlePage vob_page;
 	};
-	int m_state;
-	GstElement *m_gst_playbin;
-	GstTagList *m_stream_tags;
-	eFixedMessagePump<int> m_pump;
-	std::string m_error_message;
 
-	audiotype_t gstCheckAudioPad(GstStructure* structure);
-	void gstBusCall(GstBus *bus, GstMessage *msg);
-	static GstBusSyncReply gstBusSyncHandler(GstBus *bus, GstMessage *message, gpointer user_data);
-	static void gstCBsubtitleAvail(GstElement *element, gpointer user_data);
-	GstPad* gstCreateSubtitleSink(eServiceMP3* _this, subtype_t type);
-	void gstPoll(const int&);
+        std::list<SubtitlePage> m_subtitle_pages;
+        ePtr<eTimer> m_subtitle_sync_timer;
+        
+        ePtr<eTimer> m_streamingsrc_timeout;
+        pts_t m_prev_decoder_time;
+        int m_decoder_time_valid_state;
 
-	std::list<ePangoSubtitlePage> m_subtitle_pages;
-	ePtr<eTimer> m_subtitle_sync_timer;
-	void pushSubtitles();
-	void pullSubtitle();
-	int m_subs_to_pull;
-	eSingleLock m_subs_to_pull_lock;
+        void pushSubtitles();
+        void pullSubtitle(GstBuffer *buffer);
+        void sourceTimeout();
+        sourceStream m_sourceinfo;
 	gulong m_subs_to_pull_handler_id;
 
 	RESULT seekToImpl(pts_t to);
 
 	gint m_aspect, m_width, m_height, m_framerate, m_progressive;
+	std::string m_useragent;
 	RESULT trickSeek(gdouble ratio);
 };
-#endif
 
 #endif

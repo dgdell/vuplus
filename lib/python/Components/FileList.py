@@ -16,6 +16,7 @@ EXTENSIONS = {
 		"wav": "music",
 		"ogg": "music",
 		"flac": "music",
+		"dts": "dts",
 		"jpg": "picture",
 		"jpeg": "picture",
 		"png": "picture",
@@ -28,7 +29,15 @@ EXTENSIONS = {
 		"mpeg": "movie",
 		"mkv": "movie",
 		"mp4": "movie",
-		"mov": "movie"
+		"mov": "movie",
+		"flv": "movie",
+		"m2ts": "movie",
+		"mts": "movie",
+		"3gp": "movie",
+		"3g2": "movie",
+		"wmv": "movie",
+		"asf": "movie",
+		"wma": "music",
 	}
 
 def FileEntryComponent(name, absolute = None, isDir = False):
@@ -195,6 +204,9 @@ class FileList(MenuList):
 
 				if (self.matchingPattern is None) or re_compile(self.matchingPattern).search(path):
 					self.list.append(FileEntryComponent(name = name, absolute = x , isDir = False))
+
+		if self.showMountpoints and len(self.list) == 0:
+			self.list.append(FileEntryComponent(name = _("nothing connected"), absolute = None, isDir = False))
 
 		self.l.setList(self.list)
 

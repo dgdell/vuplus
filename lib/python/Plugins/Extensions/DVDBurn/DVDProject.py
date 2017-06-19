@@ -2,6 +2,7 @@ from Tools.Directories import fileExists
 from Components.config import config, ConfigSubsection, ConfigInteger, ConfigText, ConfigSelection, getConfigListEntry, ConfigSequence, ConfigSubList
 import DVDTitle
 import xml.dom.minidom
+from Tools.Directories import resolveFilename, SCOPE_PLUGINS, SCOPE_FONTS
 
 class ConfigColor(ConfigSequence):
 	def __init__(self, default = [128,128,128]):
@@ -30,7 +31,7 @@ class DVDProject:
 		self.target = None
 		self.settings = ConfigSubsection()
 		self.settings.name = ConfigText(fixed_size = False, visible_width = 40)
-		self.settings.authormode = ConfigSelection(choices = [("menu_linked", _("Linked titles with a DVD menu")), ("just_linked", _("Direct playback of linked titles without menu")), ("menu_seperate", _("Seperate titles with a main menu")), ("data_ts", _("Dreambox format data DVD (HDTV compatible)"))])
+		self.settings.authormode = ConfigSelection(choices = [("menu_linked", _("Linked titles with a DVD menu")), ("just_linked", _("Direct playback of linked titles without menu")), ("menu_seperate", _("Seperate titles with a main menu")), ("data_ts", _("STB format data DVD (HDTV compatible)"))])
 		self.settings.titlesetmode = ConfigSelection(choices = [("single", _("Simple titleset (compatibility for legacy players)")), ("multi", _("Complex (allows mixing audio tracks and aspects)"))], default="multi")
 		self.settings.output = ConfigSelection(choices = [("iso", _("Create DVD-ISO")), ("dvd", _("Burn DVD"))])
 		self.settings.isopath = ConfigText(fixed_size = False, visible_width = 40)
@@ -125,6 +126,14 @@ class DVDProject:
 			for key in self.filekeys:
 				val = self.settings.dict()[key].getValue()
 				if not fileExists(val):
+					if val[0] != "/":
+						if key.find("font") == 0:
+							val = resolveFilename(SCOPE_FONTS)+val
+						else:
+							val = resolveFilename(SCOPE_PLUGINS)+"Extensions/DVDBurn/"+val
+						if fileExists(val):
+							self.settings.dict()[key].setValue(val)
+							continue
 					self.error += "\n%s '%s' not found" % (key, val)
 		#except AttributeError:
 		  	#print "loadProject AttributeError", self.error

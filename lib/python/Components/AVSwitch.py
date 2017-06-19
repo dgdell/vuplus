@@ -3,6 +3,7 @@ from config import config, ConfigSlider, ConfigSelection, ConfigYesNo, \
 from enigma import eAVSwitch, getDesktop
 from SystemInfo import SystemInfo
 from os import path as os_path
+from os import access, W_OK
 
 class AVSwitch:
 	def setInput(self, input):
@@ -74,7 +75,7 @@ def InitAVSwitch():
 	if config.av.yuvenabled.value:
 		colorformat_choices["yuv"] = _("YPbPr")
 
-	config.av.colorformat = ConfigSelection(choices=colorformat_choices, default="rgb")
+	config.av.colorformat = ConfigSelection(choices=colorformat_choices, default="cvbs")
 	config.av.aspectratio = ConfigSelection(choices={
 			"4_3_letterbox": _("4:3 Letterbox"),
 			"4_3_panscan": _("4:3 PanScan"), 
@@ -143,6 +144,19 @@ def InitAVSwitch():
 	SystemInfo["ScartSwitch"] = eAVSwitch.getInstance().haveScartSwitch()
 
 	try:
+		can_pcm_multichannel = access("/proc/stb/audio/multichannel_pcm", W_OK)
+	except:
+		can_pcm_multichannel = False
+
+	SystemInfo["supportPcmMultichannel"] = can_pcm_multichannel
+
+	if can_pcm_multichannel:
+		def setPCMMultichannel(configElement):
+			open("/proc/stb/audio/multichannel_pcm", "w").write(configElement.value and "enable" or "disable")
+		config.av.pcm_multichannel = ConfigYesNo(default = False)
+		config.av.pcm_multichannel.addNotifier(setPCMMultichannel)
+
+	try:
 		can_downmix = open("/proc/stb/audio/ac3_choices", "r").read()[:-1].find("downmix") != -1
 	except:
 		can_downmix = False
@@ -151,8 +165,25 @@ def InitAVSwitch():
 	if can_downmix:
 		def setAC3Downmix(configElement):
 			open("/proc/stb/audio/ac3", "w").write(configElement.value and "downmix" or "passthrough")
+			if SystemInfo.get("supportPcmMultichannel", False) and (not configElement.value) :
+				SystemInfo["CanPcmMultichannel"] = True
+			else:
+				SystemInfo["CanPcmMultichannel"] = False
+
 		config.av.downmix_ac3 = ConfigYesNo(default = True)
 		config.av.downmix_ac3.addNotifier(setAC3Downmix)
+
+	try:
+		can_downmix_aac = open("/proc/stb/audio/aac_choices", "r").read()[:-1].find("downmix") != -1
+	except:
+		can_downmix_aac = False
+
+	SystemInfo["CanDownmixAAC"] = can_downmix_aac
+	if can_downmix_aac:
+		def setAACDownmix(configElement):
+			open("/proc/stb/audio/aac", "w").write(configElement.value and "downmix" or "passthrough")
+		config.av.downmix_aac = ConfigYesNo(default = True)
+		config.av.downmix_aac.addNotifier(setAACDownmix)
 
 	try:
 		can_osd_alpha = open("/proc/stb/video/alpha", "r") and True or False

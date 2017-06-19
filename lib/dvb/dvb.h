@@ -135,7 +135,7 @@ class eDVBResourceManager: public iObject, public Object
 	DECLARE_REF(eDVBResourceManager);
 	int avail, busy;
 
-	enum { DM7025, DM800, DM500HD, DM8000 };
+	enum { DM7025, DM800, DM500HD, DM800SE, DM8000, DM7020HD };
 
 	int m_boxtype;
 
@@ -191,11 +191,11 @@ public:
 	};
 	
 	RESULT connectChannelAdded(const Slot1<void,eDVBChannel*> &channelAdded, ePtr<eConnection> &connection);
-	int canAllocateChannel(const eDVBChannelID &channelid, const eDVBChannelID &ignore, bool simulate=false);
+	int canAllocateChannel(const eDVBChannelID &channelid, const eDVBChannelID &ignore, int &system, bool simulate=false);
 
 		/* allocate channel... */
 	RESULT allocateChannel(const eDVBChannelID &channelid, eUsePtr<iDVBChannel> &channel, bool simulate=false);
-	RESULT allocatePVRChannel(eUsePtr<iDVBPVRChannel> &channel);
+	RESULT allocatePVRChannel(const eDVBChannelID &channelid, eUsePtr<iDVBPVRChannel> &channel);
 	static RESULT getInstance(ePtr<eDVBResourceManager> &);
 
 			/* allocates a frontend able to tune to frontend paramters 'feperm'.
@@ -218,6 +218,8 @@ public:
 	PSignal1<void,int> frontendUseMaskChanged;
 	SWIG_VOID(RESULT) allocateRawChannel(eUsePtr<iDVBChannel> &SWIG_OUTPUT, int slot_index);
 	PyObject *setFrontendSlotInformations(SWIG_PYOBJECT(ePyObject) list);
+	bool frontendIsCompatible(int index, const char *type);
+	void setFrontendType(int index, const char *type);
 };
 SWIG_TEMPLATE_TYPEDEF(ePtr<eDVBResourceManager>, eDVBResourceManager);
 SWIG_EXTEND(ePtr<eDVBResourceManager>,
@@ -259,7 +261,10 @@ public:
 		/* iDVBPVRChannel */
 	RESULT playFile(const char *file);
 	void stopFile();
-	
+
+	RESULT playSource(ePtr<iTsSource>& source, const char *priv=NULL);
+	void stopSource();
+
 	void setCueSheet(eCueSheet *cuesheet);
 	
 	RESULT getLength(pts_t &len);
@@ -268,6 +273,7 @@ public:
 	int getUseCount() { return m_use_count; }
 
 	RESULT requestTsidOnid(ePyObject callback);
+	int reserveDemux();
 private:
 	ePtr<eDVBAllocatedFrontend> m_frontend;
 	ePtr<eDVBAllocatedDemux> m_demux, m_decoder_demux;
@@ -300,7 +306,7 @@ private:
 	std::list<std::pair<off_t, off_t> > m_source_span;
 	void getNextSourceSpan(off_t current_offset, size_t bytes_read, off_t &start, size_t &size);
 	void flushPVR(iDVBDemux *decoding_demux=0);
-	
+
 	eSingleLock m_cuesheet_lock;
 
 	friend class eUsePtr<eDVBChannel>;

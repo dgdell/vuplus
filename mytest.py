@@ -10,7 +10,8 @@ from Tools.Profile import profile, profile_final
 profile("PYTHON_START")
 
 from enigma import runMainloop, eDVBDB, eTimer, quitMainloop, \
-	getDesktop, ePythonConfigQuery, eAVSwitch, eServiceEvent
+	getDesktop, ePythonConfigQuery, eAVSwitch, eServiceEvent, \
+	eEPGCache
 from tools import *
 
 profile("LANGUAGE")
@@ -30,6 +31,9 @@ from Screens.SimpleSummary import SimpleSummary
 
 from sys import stdout, exc_info
 
+profile("Bouquets")
+eDVBDB.getInstance().reloadBouquets()
+
 profile("ParentalControl")
 from Components.ParentalControl import InitParentalControl
 InitParentalControl()
@@ -45,14 +49,18 @@ from Tools.Directories import InitFallbackFiles, resolveFilename, SCOPE_PLUGINS,
 from Components.config import config, configfile, ConfigText, ConfigYesNo, ConfigInteger, NoSave
 InitFallbackFiles()
 
-profile("ReloadProfiles")
-eDVBDB.getInstance().reloadBouquets()
+profile("config.misc")
 
 config.misc.radiopic = ConfigText(default = resolveFilename(SCOPE_CURRENT_SKIN, "radio.mvi"))
 config.misc.isNextRecordTimerAfterEventActionAuto = ConfigYesNo(default=False)
 config.misc.useTransponderTime = ConfigYesNo(default=True)
 config.misc.startCounter = ConfigInteger(default=0) # number of e2 starts...
 config.misc.standbyCounter = NoSave(ConfigInteger(default=0)) # number of standby
+config.misc.epgcache_filename = ConfigText(default = "/hdd/epg.dat")
+
+def setEPGCachePath(configElement):
+	eEPGCache.getInstance().setCacheFile(configElement.value)
+
 
 #demo code for use of standby enter leave callbacks
 #def leaveStandby():
@@ -206,6 +214,7 @@ class Session:
 			self.summary.show()
 			c.addSummary(self.summary)
 
+		c.saveKeyboardMode()
 		c.execBegin()
 
 		# when execBegin opened a new dialog, don't bother showing the old one.
@@ -217,6 +226,7 @@ class Session:
 		self.in_exec = False
 
 		self.current_dialog.execEnd()
+		self.current_dialog.restoreKeyboardMode()
 		self.current_dialog.hide()
 
 		if last:
@@ -363,9 +373,10 @@ class PowerKey:
 	def powerlong(self):
 		if Screens.Standby.inTryQuitMainloop or (self.session.current_dialog and not self.session.current_dialog.ALLOW_SUSPEND):
 			return
+		self.doAction(action = config.usage.on_long_powerpress.value)
 
+	def doAction(self, action):
 		self.standbyblocked = 1
-		action = config.usage.on_long_powerpress.value
 		if action == "shutdown":
 			self.shutdown()
 		elif action == "show_menu":
@@ -380,14 +391,15 @@ class PowerKey:
 						menu_screen = self.session.openWithCallback(self.MenuClosed, MainMenu, x)
 						menu_screen.setTitle(_("Standby / Restart"))
 						return
+		elif action == "standby":
+			self.standby()
 
 	def powerdown(self):
 		self.standbyblocked = 0
 
 	def powerup(self):
 		if self.standbyblocked == 0:
-			self.standbyblocked = 1
-			self.standby()
+			self.doAction(action = config.usage.on_short_powerpress.value)
 
 	def standby(self):
 		if not Screens.Standby.inStandby and self.session.current_dialog and self.session.current_dialog.ALLOW_SUSPEND and self.session.in_exec:
@@ -467,6 +479,8 @@ def runScreenTest():
 			session.openWithCallback(boundFunction(runNextScreen, session, screensToRun[1:]), screen, *args)
 		else:
 			session.open(screen, *args)
+
+	config.misc.epgcache_filename.addNotifier(setEPGCachePath)
 
 	runNextScreen(session, screensToRun)
 

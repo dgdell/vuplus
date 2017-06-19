@@ -64,6 +64,11 @@ struct gOpcode
 		shutdown,
 		
 		setCompositing,
+		sendShow,
+		sendHide,
+#ifdef USE_LIBVUGLES2
+		setView,
+#endif
 	} opcode;
 
 	gDC *dc;
@@ -142,6 +147,18 @@ struct gOpcode
 		} *setOffset;
 		
 		gCompositingData *setCompositing;
+
+		struct psetShowHideInfo
+		{
+			ePoint point;
+			eSize size;
+		} *setShowHideInfo;
+#ifdef USE_LIBVUGLES2
+		struct psetViewInfo
+		{
+			eSize size;
+		} *setViewInfo;
+#endif
 	} parm;
 };
 
@@ -265,6 +282,11 @@ public:
 	void setCompositing(gCompositingData *comp);
 	
 	void flush();
+	void sendShow(ePoint point, eSize size);
+	void sendHide(ePoint point, eSize size);
+#ifdef USE_LIBVUGLES2
+	void setView(eSize size);
+#endif
 };
 
 class gDC: public iObject
@@ -286,7 +308,7 @@ protected:
 	eRect m_spinner_pos;
 	int m_spinner_num, m_spinner_i;
 public:
-	virtual void exec(gOpcode *opcode);
+	virtual void exec(const gOpcode *opcode);
 	gDC(gPixmap *pixmap);
 	gDC();
 	virtual ~gDC();
@@ -296,10 +318,10 @@ public:
 	virtual eSize size() { return m_pixmap->size(); }
 	virtual int islocked() { return 0; }
 	
-	void enableSpinner();
-	void disableSpinner();
-	void incrementSpinner();
-	void setSpinner(eRect pos, ePtr<gPixmap> *pic, int len);
+	virtual void enableSpinner();
+	virtual void disableSpinner();
+	virtual void incrementSpinner();
+	virtual void setSpinner(eRect pos, ePtr<gPixmap> *pic, int len);
 };
 
 #endif

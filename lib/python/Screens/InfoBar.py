@@ -11,7 +11,7 @@ from enigma import iPlayableService
 profile("LOAD:InfoBarGenerics")
 from Screens.InfoBarGenerics import InfoBarShowHide, \
 	InfoBarNumberZap, InfoBarChannelSelection, InfoBarMenu, InfoBarRdsDecoder, \
-	InfoBarEPG, InfoBarSeek, InfoBarInstantRecord, \
+	InfoBarEPG, InfoBarSeek, InfoBarInstantRecord, InfoBarRedButton, \
 	InfoBarAudioSelection, InfoBarAdditionalInfo, InfoBarNotifications, InfoBarDish, InfoBarUnhandledKey, \
 	InfoBarSubserviceSelection, InfoBarShowMovies, InfoBarTimeshift,  \
 	InfoBarServiceNotifications, InfoBarPVRState, InfoBarCueSheetSupport, InfoBarSimpleEventView, \
@@ -28,7 +28,7 @@ from Screens.HelpMenu import HelpableScreen
 
 class InfoBar(InfoBarBase, InfoBarShowHide,
 	InfoBarNumberZap, InfoBarChannelSelection, InfoBarMenu, InfoBarEPG, InfoBarRdsDecoder,
-	InfoBarInstantRecord, InfoBarAudioSelection, 
+	InfoBarInstantRecord, InfoBarAudioSelection, InfoBarRedButton,
 	HelpableScreen, InfoBarAdditionalInfo, InfoBarNotifications, InfoBarDish, InfoBarUnhandledKey,
 	InfoBarSubserviceSelection, InfoBarTimeshift, InfoBarSeek,
 	InfoBarSummarySupport, InfoBarTimeshiftState, InfoBarTeletextPlugin, InfoBarExtensions,
@@ -45,6 +45,7 @@ class InfoBar(InfoBarBase, InfoBarShowHide,
 				"showMovies": (self.showMovies, _("Play recorded movies...")),
 				"showRadio": (self.showRadio, _("Show the radio player...")),
 				"showTv": (self.showTv, _("Show the tv player...")),
+				"showSubtitle":(self.showSubtitle, _("Show the Subtitle...")),
 			}, prio=2)
 		
 		self.allowPiP = True
@@ -52,7 +53,7 @@ class InfoBar(InfoBarBase, InfoBarShowHide,
 		for x in HelpableScreen, \
 				InfoBarBase, InfoBarShowHide, \
 				InfoBarNumberZap, InfoBarChannelSelection, InfoBarMenu, InfoBarEPG, InfoBarRdsDecoder, \
-				InfoBarInstantRecord, InfoBarAudioSelection, InfoBarUnhandledKey, \
+				InfoBarInstantRecord, InfoBarAudioSelection, InfoBarRedButton, InfoBarUnhandledKey, \
 				InfoBarAdditionalInfo, InfoBarNotifications, InfoBarDish, InfoBarSubserviceSelection, \
 				InfoBarTimeshift, InfoBarSeek, InfoBarSummarySupport, InfoBarTimeshiftState, \
 				InfoBarTeletextPlugin, InfoBarExtensions, InfoBarPiP, InfoBarSubtitleSupport, InfoBarJobman, \
@@ -123,6 +124,10 @@ class InfoBar(InfoBarBase, InfoBarShowHide,
 		if service is not None:
 			self.session.open(MoviePlayer, service)
 
+	def showSubtitle(self):
+		from Screens.Subtitles import Subtitles
+		self.session.open(Subtitles)
+
 class MoviePlayer(InfoBarBase, InfoBarShowHide, \
 		InfoBarMenu, \
 		InfoBarSeek, InfoBarShowMovies, InfoBarAudioSelection, HelpableScreen, InfoBarNotifications,
@@ -138,6 +143,7 @@ class MoviePlayer(InfoBarBase, InfoBarShowHide, \
 		
 		self["actions"] = HelpableActionMap(self, "MoviePlayerActions",
 			{
+				"showSubtitle":(self.showSubtitle, _("Show the Subtitle...")),
 				"leavePlayer": (self.leavePlayer, _("leave movie player..."))
 			})
 		
@@ -221,6 +227,7 @@ class MoviePlayer(InfoBarBase, InfoBarShowHide, \
 			self.session.nav.stopService()
 		elif answer == "restart":
 			self.doSeek(0)
+			self.setSeekState(self.SEEK_STATE_PLAY)
 
 	def doEofInternal(self, playing):
 		if not self.execing:
@@ -241,3 +248,7 @@ class MoviePlayer(InfoBarBase, InfoBarShowHide, \
 			self.returning = False
 		elif self.returning:
 			self.close()
+
+	def showSubtitle(self):
+		from Screens.Subtitles import Subtitles
+		self.session.open(Subtitles)

@@ -27,13 +27,28 @@ dist_install_DATA = \
 	icon_view.png \
 	input_error.png \
 	input_info.png \
+	input_keyboard-configured.png \
+	input_keyboard.png \
+	input_mouse-configured.png \
+	input_mouse.png \
 	input_question.png \
+	input_rcnew-configured.png \
+	input_rcnew.png \
+	input_rcold-configured.png \
+	input_rcold.png \
 	lock_error.png \
 	lock_off.png \
 	lock_on.png \
 	lock.png \
+	lockBouquet.png \
 	marker.png \
 	mp_buttons.png \
+	network_wired.png \
+	network_wired-active.png \
+	network_wired-inactive.png \
+	network_wireless.png \
+	network_wireless-active.png \
+	network_wireless-inactive.png \
 	plugin.png \
 	rass_logo.png \
 	rass_page1.png \
@@ -47,4 +62,7 @@ dist_install_DATA = \
 	scan-c.png \
 	scan-s.png \
 	scan-t.png \
-	selectioncross.png
+	selectioncross.png \
+	unlock.png \
+	unlockBouquet.png
+

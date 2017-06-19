@@ -17,7 +17,6 @@
 		<item text="Network setup" entryID="network_setup">self.openSetup("network")</item>-->
 		<!--<item text="CI"><screen module="Ci" screen="CiSelection" /></item>-->
 		<!--<item text="Radio"><code>print "radio mode"</code></item>-->
-		<item level="0" text="Subtitles" entryID="subtitle_selection" weight="40"><screen module="Subtitles" screen="Subtitles" /></item>
 		<item level="0" text="Timer" entryID="timer_edit"><screen module="TimerEdit" screen="TimerEditList" /></item>
 		<item level="1" text="VCR scart" entryID="scart_switch" requires="ScartSwitch"><code>self.session.scart.VCRSbChanged(3)</code></item>
 
@@ -62,8 +61,9 @@
 				</menu>
 				<!--<item text="Remote Control"><setup id="rc" /></item>-->
 				<!--<item text="OSD"><setup id="osd" /></item>-->
-				<item requires="Display"><setup level="1" id="lcd" /></item>
 				<item level="0" text="Network" entryID="network_setup"><screen module="NetworkSetup" screen="NetworkAdapterSelection" /></item>
+				<!--<item level="1" text="Input devices" entryID="input_device_setup"><screen module="InputDeviceSetup" screen="InputDeviceSelection" /></item>-->
+				<item requires="Display"><setup level="1" id="lcd" /></item>
 				<item text="Keyboard"><setup id="keyboard" /></item>
 				<!--<menu level="1" text="Network..." entryID="network_setup">
 					<id val="network" />
@@ -83,6 +83,7 @@ def msgClosed(ret):
 		from os import system, _exit
 		system("rm -R /etc/enigma2")
 		system("cp -R /usr/share/enigma2/defaults /etc/enigma2")
+		system("/usr/bin/showiframe /boot/backdrop.mvi")
 		_exit(0)
 self.session.openWithCallback(msgClosed, FactoryReset)
 </code>

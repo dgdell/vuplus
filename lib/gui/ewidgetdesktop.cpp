@@ -381,7 +381,10 @@ void eWidgetDesktop::makeCompatiblePixmap(gPixmap &pm)
 	ePtr<gPixmap> target_pixmap;
 	m_screen.m_dc->getPixmap(target_pixmap);
 	
-	ASSERT(target_pixmap);
+	if (!target_pixmap) {
+		eDebug("no target pixmap! assuming bpp > 8 for accelerated graphics.");
+		return;
+	}
 	
 	if (target_pixmap->surface && target_pixmap->surface->bpp > 8)
 		return;
@@ -518,4 +521,26 @@ void eWidgetDesktop::resize(eSize size)
 {
 	m_screen.m_dirty_region = gRegion(eRect(ePoint(0, 0), size));
 	m_screen.m_screen_size = size;
+#ifdef USE_LIBVUGLES2
+	gPainter painter(m_screen.m_dc);
+	painter.setView(size);
+#endif
+}
+
+void eWidgetDesktop::sendShow(ePoint point, eSize size)
+{
+	if(m_style_id!=0)
+		return;
+
+	gPainter painter(m_screen.m_dc);
+	painter.sendShow(point, size);
+}
+
+void eWidgetDesktop::sendHide(ePoint point, eSize size)
+{
+	if(m_style_id!=0)
+		return;
+
+	gPainter painter(m_screen.m_dc);
+	painter.sendHide(point, size);
 }

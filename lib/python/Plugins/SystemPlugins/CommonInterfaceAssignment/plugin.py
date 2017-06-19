@@ -12,7 +12,7 @@ from ServiceReference import ServiceReference
 from Plugins.Plugin import PluginDescriptor
 from xml.etree.cElementTree import parse as ci_parse
 from Tools.XMLTools import elementsWithTag, mergeText, stringToXML
-from enigma import eDVBCI_UI, eDVBCIInterfaces
+from enigma import eDVBCI_UI, eDVBCIInterfaces, eEnv
 
 from os import system, path as os_path
 
@@ -57,6 +57,8 @@ class CIselectMainMenu(Screen):
 					appname = _("Slot %d") %(slot+1) + " - " + _("init modules")
 				elif state == 2:
 					appname = _("Slot %d") %(slot+1) + " - " + eDVBCI_UI.getInstance().getAppName(slot)
+				else :
+					appname = _("Slot %d") %(slot+1) + " - " + _("no module found")
 				self.list.append( (appname, ConfigNothing(), 0, slot) )
 		else:
 			self.list.append( (_("no CI slots found") , ConfigNothing(), 1, -1) )
@@ -115,7 +117,7 @@ class CIconfigMenu(Screen):
 
 		Screen.__init__(self, session)
 		self.ci_slot=ci_slot
-		self.filename="/etc/enigma2/ci"+str(self.ci_slot)+".xml"
+		self.filename = eEnv.resolve("${sysconfdir}/enigma2/ci") + str(self.ci_slot) + ".xml"
 
 		self["key_red"] = StaticText(_("Delete"))
 		self["key_green"] = StaticText(_("add Service"))
@@ -567,7 +569,7 @@ def activate_all(session):
 			return Len > 0 and definitions[Len-1].text or default	
 
 		for ci in range(NUM_CI):
-			filename="/etc/enigma2/ci"+str(ci)+".xml"
+			filename = eEnv.resolve("${sysconfdir}/enigma2/ci") + str(ci) + ".xml"
 
 			if not os_path.exists(filename):
 				print "[CI_Activate_Config_CI%d] no config file found" %ci
@@ -636,10 +638,10 @@ def menu(menuid, **kwargs):
 
 def Plugins(**kwargs):
 	if config.usage.setup_level.index > 1:
-		return [PluginDescriptor( where = PluginDescriptor.WHERE_SESSIONSTART, fnc = sessionstart ),
-				PluginDescriptor( where = PluginDescriptor.WHERE_AUTOSTART, fnc = autostart ),
-				PluginDescriptor( name = "CommonInterfaceAssignment", description = _("a gui to assign services/providers/caids to common interface modules"), where = PluginDescriptor.WHERE_MENU, fnc = menu )]
+		return [PluginDescriptor( where = PluginDescriptor.WHERE_SESSIONSTART, needsRestart = False, fnc = sessionstart ),
+				PluginDescriptor( where = PluginDescriptor.WHERE_AUTOSTART, needsRestart = False, fnc = autostart ),
+				PluginDescriptor( name = "CommonInterfaceAssignment", description = _("a gui to assign services/providers/caids to common interface modules"), where = PluginDescriptor.WHERE_MENU, needsRestart = False, fnc = menu )]
 	else:
-		return [PluginDescriptor( where = PluginDescriptor.WHERE_SESSIONSTART, fnc = sessionstart ),
-				PluginDescriptor( where = PluginDescriptor.WHERE_AUTOSTART, fnc = autostart ),
-				PluginDescriptor( name = "CommonInterfaceAssignment", description = _("a gui to assign services/providers to common interface modules"), where = PluginDescriptor.WHERE_MENU, fnc = menu )]
+		return [PluginDescriptor( where = PluginDescriptor.WHERE_SESSIONSTART, needsRestart = False, fnc = sessionstart ),
+				PluginDescriptor( where = PluginDescriptor.WHERE_AUTOSTART, needsRestart = False, fnc = autostart ),
+				PluginDescriptor( name = "CommonInterfaceAssignment", description = _("a gui to assign services/providers to common interface modules"), where = PluginDescriptor.WHERE_MENU, needsRestart = False, fnc = menu )]

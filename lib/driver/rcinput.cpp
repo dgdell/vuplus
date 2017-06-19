@@ -11,17 +11,105 @@
 #include <lib/base/init_num.h>
 #include <lib/driver/input_fake.h>
 
+#ifdef VUPLUS_USE_RCKBD	
+#include <lib/driver/rcconsole.h>
+extern eRCConsole* g_ConsoleDevice;
+#define CODE_RC    0
+#define CODE_ASCII 1
+
+#define KEY_LALT 	56
+#define KEY_RALT 	100
+#define KEY_LSHIFT 	42
+static int special_key_mode = 0;
+
+int getType(int code)
+{
+	switch(code)
+	{
+	case 2:   // 1
+	case 3:   // 2
+	case 4:   // 3
+	case 5:   // 4
+	case 6:   // 5
+	case 7:   // 6
+	case 8:   // 7
+	case 9:   // 8
+	case 10:  // 9
+	case 11:  // 0
+	case 14:  // backspace
+	case 102: // home
+	case 103: // up
+	case 105: // left
+	case 106: // right
+	case 107: // end
+	case 108: // down
+	case 113: // mute
+	case 114: // volume down
+	case 115: // vulume up
+	case 116: // power
+	case 128: // stop
+	case 138: // help
+	case 139: // menu
+	case 163: // FF
+	case 208: // FF
+	case 164: // pause
+	case 165: // RW
+	case 168: // RW
+	case 167: // record
+	case 174: // exit
+	case 207: // play
+	case 352: // ok
+	case 358: // epg
+	case 370: // _subtitle selection
+	case 377: // tv
+	case 385: // radio
+	case 388: // =text
+	case 392: // audio
+	case 393: // =recorded files
+	case 398: // red
+	case 399: // green
+	case 400: // yellow
+	case 401: // blue
+	case 402: // channel up
+	case 403: // channel down
+	case 407: // >
+	case 412: // <
+		return CODE_RC;
+	}
+	return CODE_ASCII;
+}
+#endif /*VUPLUS_USE_RCKBD*/
+
 void eRCDeviceInputDev::handleCode(long rccode)
 {
 	struct input_event *ev = (struct input_event *)rccode;
 	if (ev->type!=EV_KEY)
 		return;
+#ifdef VUPLUS_USE_RCKBD
+	//eDebug("value : %d, code : %d, type : %d, type : %s", ev->value, ev->code, ev->type, getType(ev->code)?"ASCII":"RC");
+	if(getType(ev->code) || special_key_mode)
+	{
+		switch(ev->value)
+		{
+			case 0:
+				if(ev->code == KEY_RALT || ev->code == KEY_LSHIFT || ev->code == KEY_LALT)
+				{
+					special_key_mode = 0;
+					g_ConsoleDevice->handleCode(0);
+				}
+				break;
+			case 1: 
+				if(ev->code == KEY_RALT || ev->code == KEY_LSHIFT || ev->code == KEY_LALT)
+					special_key_mode = 1;
+				g_ConsoleDevice->handleCode(ev->code);
+				break;
+			case 2: break;
+		}
+		return;
+	}
+#endif /*VUPLUS_USE_RCKBD*/
 
 //	eDebug("%x %x %x", ev->value, ev->code, ev->type);
-
-	if (ev->type!=EV_KEY)
-		return;
-
 	int km = iskeyboard ? input->getKeyboardMode() : eRCInput::kmNone;
 
 //	eDebug("keyboard mode %d", km);

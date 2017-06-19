@@ -131,6 +131,7 @@ class TempFanControl(Screen, ConfigListScreen):
 		ConfigListScreen.__init__(self, self.list, session = self.session)
 		#self["config"].list = self.list
 		#self["config"].setList(self.list)
+		self["config"].l.setSeperation(300)
 		
 		self["actions"] = ActionMap(["OkCancelActions", "ColorActions"], 
 		{
@@ -165,5 +166,5 @@ def startMenu(menuid):
 	return [(_("Temperature and Fan control"), main, "tempfancontrol", 80)]
 
 def Plugins(**kwargs):
-	return PluginDescriptor(name = "Temperature and Fan control", description = _("Temperature and Fan control"), where = PluginDescriptor.WHERE_MENU, fnc = startMenu)
+	return PluginDescriptor(name = "Temperature and Fan control", description = _("Temperature and Fan control"), where = PluginDescriptor.WHERE_MENU, needsRestart = False, fnc = startMenu)
 

@@ -3,6 +3,11 @@
 #include <lib/gdi/gpixmap.h>
 #include <lib/gdi/region.h>
 #include <lib/gdi/accel.h>
+#include <byteswap.h>
+
+#ifndef BYTE_ORDER
+#error "no BYTE_ORDER defined!"
+#endif
 
 gLookup::gLookup()
 	:size(0), lookup(0)
@@ -154,6 +159,26 @@ void gPixmap::fill(const gRegion &region, const gColor &color)
 		{
 			for (int y=area.top(); y<area.bottom(); y++)
 		 		memset(((__u8*)surface->data)+y*surface->stride+area.left(), color.color, area.width());
+		} else if (surface->bpp == 16)
+		{
+			__u32 icol;
+
+			if (surface->clut.data && color < surface->clut.colors)
+				icol=(surface->clut.data[color].a<<24)|(surface->clut.data[color].r<<16)|(surface->clut.data[color].g<<8)|(surface->clut.data[color].b);
+			else
+				icol=0x10101*color;
+#if BYTE_ORDER == LITTLE_ENDIAN
+			__u16 col = bswap_16(((icol & 0xFF) >> 3) << 11 | ((icol & 0xFF00) >> 10) << 5 | (icol & 0xFF0000) >> 19);
+#else
+			__u16 col = ((icol & 0xFF) >> 3) << 11 | ((icol & 0xFF00) >> 10) << 5 | (icol & 0xFF0000) >> 19;
+#endif
+			for (int y=area.top(); y<area.bottom(); y++)
+			{
+				__u16 *dst=(__u16*)(((__u8*)surface->data)+y*surface->stride+area.left()*surface->bypp);
+				int x=area.width();
+				while (x--)
+					*dst++=col;
+			}
 		} else if (surface->bpp == 32)
 		{
 			__u32 col;
@@ -208,18 +233,33 @@ void gPixmap::fill(const gRegion &region, const gRGB &color)
 				while (x--)
 					*dst++=col;
 			}
+		} else if (surface->bpp == 16)
+		{
+			__u32 icol = color.argb();
+#if BYTE_ORDER == LITTLE_ENDIAN
+			__u16 col = bswap_16(((icol & 0xFF) >> 3) << 11 | ((icol & 0xFF00) >> 10) << 5 | (icol & 0xFF0000) >> 19);
+#else
+			__u16 col = ((icol & 0xFF) >> 3) << 11 | ((icol & 0xFF00) >> 10) << 5 | (icol & 0xFF0000) >> 19;
+#endif
+			for (int y=area.top(); y<area.bottom(); y++)
+			{
+				__u16 *dst=(__u16*)(((__u8*)surface->data)+y*surface->stride+area.left()*surface->bypp);
+				int x=area.width();
+				while (x--)
+					*dst++=col;
+			}
 		}	else
 			eWarning("couldn't rgbfill %d bpp", surface->bpp);
 	}
 }
 
-static void blit_8i_to_32(__u32 *dst, __u8 *src, __u32 *pal, int width)
+static inline void blit_8i_to_32(__u32 *dst, __u8 *src, __u32 *pal, int width)
 {
 	while (width--)
 		*dst++=pal[*src++];
 }
 
-static void blit_8i_to_32_at(__u32 *dst, __u8 *src, __u32 *pal, int width)
+static inline void blit_8i_to_32_at(__u32 *dst, __u8 *src, __u32 *pal, int width)
 {
 	while (width--)
 	{
@@ -229,6 +269,25 @@ static void blit_8i_to_32_at(__u32 *dst, __u8 *src, __u32 *pal, int width)
 			dst++;
 		} else
 			*dst++=pal[*src++];
+	}
+}
+
+static inline void blit_8i_to_16(__u16 *dst, __u8 *src, __u32 *pal, int width)
+{
+	while (width--)
+		*dst++=pal[*src++] & 0xFFFF;
+}
+
+static inline void blit_8i_to_16_at(__u16 *dst, __u8 *src, __u32 *pal, int width)
+{
+	while (width--)
+	{
+		if (!(pal[*src]&0x80000000))
+		{
+			src++;
+			dst++;
+		} else
+			*dst++=pal[*src++] & 0xFFFF;
 	}
 }
 
@@ -261,6 +320,7 @@ static void blit_8i_to_32_ab(__u32 *dst, __u8 *src, __u32 *pal, int width)
 }
 
 #define FIX 0x10000
+
 
 void gPixmap::blit(const gPixmap &src, const eRect &_pos, const gRegion &clip, int flag)
 {
@@ -321,6 +381,96 @@ void gPixmap::blit(const gPixmap &src, const eRect &_pos, const gRegion &clip, i
 			continue;
 		}
 
+#ifdef SET_RIGHT_HALF_VFD_SKIN
+		if ((surface->bpp == 8) && (src.surface->bpp==8))
+		{
+			__u8 *srcptr=(__u8*)src.surface->data;
+			__u8 *dstptr=(__u8*)surface->data;
+			__u8 *nomptr = new __u8[area.width()];
+			unsigned char gray_max = 0;
+			unsigned char gray_min = 255;
+			unsigned char index = 0;
+			unsigned char gray_value = 0;
+			gRGB pixdata;
+//			printf("[bilt]srcarea.left:%d, src.surface->bypp : %d,srcarea.top() :%d,src.surface->stride : %d\n",srcarea.left(),src.surface->bypp,srcarea.top(),src.surface->stride);
+			srcptr+=srcarea.left()*src.surface->bypp+srcarea.top()*src.surface->stride;
+//			nomptr+=srcarea.left()*src.surface->bypp+srcarea.top()*src.surface->stride;
+			dstptr+=area.left()*surface->bypp+area.top()*surface->stride;
+			if(src.surface->clut.colors != 0)
+			{
+				for (int y=0; y<area.height(); y++)
+				{
+					for(int x=0;x<area.width();x++)
+					{
+						index = (unsigned char)(*(srcptr+x+y*src.surface->stride));
+						pixdata = src.surface->clut.data[index];
+						gray_value = ((pixdata.r+pixdata.g +pixdata.b)/3);
+	//					printf("%3d ",gray_value);
+						if(gray_value > gray_max)
+							gray_max = gray_value;
+						if(gray_value < gray_min)
+							gray_min = gray_value;
+					}
+	//				printf("\n");
+				}
+			}
+//			printf("\n[bilt] ### gray_min : %d, gray_max : %d\n\n",gray_min,gray_max);
+			for (int y=0; y<area.height(); y++)
+			{
+				if(src.surface->clut.colors != 0)
+				{
+					for(int x=0;x<area.width();x++)
+					{
+						pixdata = src.surface->clut.data[*(srcptr+x)];
+						gray_value = ((pixdata.r+pixdata.g +pixdata.b)/3);
+						if(gray_max==gray_min)
+							*(nomptr+x)=gray_value;
+/*						else if(y == 0 || y == area.height()-1 || x == 0 || x == area.width()-1)
+							*(nomptr+x) = 255;*/
+						else
+							*(nomptr+x)=( ((gray_value - gray_min)*255)/(gray_max-gray_min) );
+	//					printf("%3d ",*(nomptr+x));
+					}
+	//				printf("\n");
+				}
+				else
+				{
+					for(int x=0;x<area.width();x++)
+					{
+/*						if(y == 0 || y == area.height()-1 || x == 0 || x == area.width()-1)
+							*(nomptr+x) = 255;
+						else
+							*(nomptr+x)=*(srcptr+x);*/
+						*(nomptr+x)=*(srcptr+x);
+//						printf("%3d ",*(nomptr+x));
+					}
+//					printf("\n");
+				}
+				if (flag & (blitAlphaTest|blitAlphaBlend))
+				{
+  		      // no real alphatest yet
+					int width=area.width();
+//					unsigned char *src=(unsigned char*)srcptr;
+					unsigned char *src=(unsigned char*)nomptr;
+					unsigned char *dst=(unsigned char*)dstptr;
+						// use duff's device here!
+					while (width--)
+					{
+						if (!*src)
+						{
+							src++;
+							dst++;
+						} else
+							*dst++=*src++;
+					}
+				} else
+//					memcpy(dstptr, srcptr, area.width()*surface->bypp);
+					memcpy(dstptr, nomptr, area.width()*surface->bypp);
+				srcptr+=src.surface->stride;
+				dstptr+=surface->stride;
+			}
+			delete [] nomptr;
+#else
 		if ((surface->bpp == 8) && (src.surface->bpp==8))
 		{
 			__u8 *srcptr=(__u8*)src.surface->data;
@@ -351,6 +501,7 @@ void gPixmap::blit(const gPixmap &src, const eRect &_pos, const gRegion &clip, i
 				srcptr+=src.surface->stride;
 				dstptr+=surface->stride;
 			}
+#endif
 		} else if ((surface->bpp == 32) && (src.surface->bpp==32))
 		{
 			__u32 *srcptr=(__u32*)src.surface->data;
@@ -441,6 +592,95 @@ void gPixmap::blit(const gPixmap &src, const eRect &_pos, const gRegion &clip, i
 				srcptr+=src.surface->stride;
 				dstptr+=surface->stride;
 			}
+		} else if ((surface->bpp == 16) && (src.surface->bpp==8))
+		{
+			__u8 *srcptr=(__u8*)src.surface->data;
+			__u8 *dstptr=(__u8*)surface->data; // !!
+			__u32 pal[256];
+
+			for (int i=0; i<256; ++i)
+			{
+				__u32 icol;
+				if (src.surface->clut.data && (i<src.surface->clut.colors))
+					icol=(src.surface->clut.data[i].a<<24)|(src.surface->clut.data[i].r<<16)|(src.surface->clut.data[i].g<<8)|(src.surface->clut.data[i].b);
+				else
+					icol=0x010101*i;
+#if BYTE_ORDER == LITTLE_ENDIAN
+				pal[i] = bswap_16(((icol & 0xFF) >> 3) << 11 | ((icol & 0xFF00) >> 10) << 5 | (icol & 0xFF0000) >> 19);
+#else
+				pal[i] = ((icol & 0xFF) >> 3) << 11 | ((icol & 0xFF00) >> 10) << 5 | (icol & 0xFF0000) >> 19;
+#endif
+				pal[i]^=0xFF000000;
+			}
+
+			srcptr+=srcarea.left()*src.surface->bypp+srcarea.top()*src.surface->stride;
+			dstptr+=area.left()*surface->bypp+area.top()*surface->stride;
+
+			if (flag & blitAlphaBlend)
+				eWarning("ignore unsupported 8bpp -> 16bpp alphablend!");
+
+			for (int y=0; y<area.height(); y++)
+			{
+				int width=area.width();
+				unsigned char *psrc=(unsigned char*)srcptr;
+				__u16 *dst=(__u16*)dstptr;
+				if (flag & blitAlphaTest)
+					blit_8i_to_16_at(dst, psrc, pal, width);
+				else
+					blit_8i_to_16(dst, psrc, pal, width);
+				srcptr+=src.surface->stride;
+				dstptr+=surface->stride;
+			}
+		} else if ((surface->bpp == 16) && (src.surface->bpp==32))
+		{
+			__u8 *srcptr=(__u8*)src.surface->data;
+			__u8 *dstptr=(__u8*)surface->data;
+
+			srcptr+=srcarea.left()+srcarea.top()*src.surface->stride;
+			dstptr+=area.left()+area.top()*surface->stride;
+
+			if (flag & blitAlphaBlend)
+				eWarning("ignore unsupported 32bpp -> 16bpp alphablend!");
+
+			for (int y=0; y<area.height(); y++)
+			{
+				int width=area.width();
+				__u32 *srcp=(__u32*)srcptr;
+				__u16 *dstp=(__u16*)dstptr;
+
+				if (flag & blitAlphaTest)
+				{
+					while (width--)
+					{
+						if (!((*srcp)&0xFF000000))
+						{
+							srcp++;
+							dstp++;
+						} else
+						{
+							__u32 icol = *srcp++;
+#if BYTE_ORDER == LITTLE_ENDIAN
+							*dstp++ = bswap_16(((icol & 0xFF) >> 3) << 11 | ((icol & 0xFF00) >> 10) << 5 | (icol & 0xFF0000) >> 19);
+#else
+							*dstp++ = ((icol & 0xFF) >> 3) << 11 | ((icol & 0xFF00) >> 10) << 5 | (icol & 0xFF0000) >> 19;
+#endif
+						}
+					}
+				} else
+				{
+					while (width--)
+					{
+						__u32 icol = *srcp++;
+#if BYTE_ORDER == LITTLE_ENDIAN
+						*dstp++ = bswap_16(((icol & 0xFF) >> 3) << 11 | ((icol & 0xFF00) >> 10) << 5 | (icol & 0xFF0000) >> 19);
+#else
+						*dstp++ = ((icol & 0xFF) >> 3) << 11 | ((icol & 0xFF00) >> 10) << 5 | (icol & 0xFF0000) >> 19;
+#endif
+					}
+				}
+				srcptr+=src.surface->stride;
+				dstptr+=surface->stride;
+			}
 		} else
 			eWarning("cannot blit %dbpp from %dbpp", surface->bpp, src.surface->bpp);
 	}
@@ -488,27 +728,34 @@ static inline int sgn(int a)
 void gPixmap::line(const gRegion &clip, ePoint start, ePoint dst, gColor color)
 {
 	__u8 *srf8 = 0;
-	__u32 *srf32 = 0; 
+	__u16 *srf16 = 0;
+	__u32 *srf32 = 0;
 	int stride = surface->stride;
-	
+
 	if (clip.rects.empty())
 		return;
-		
+
+	__u16 col16;
 	__u32 col = 0;
 	if (surface->bpp == 8)
-	{
 		srf8 = (__u8*)surface->data;
-	} else if (surface->bpp == 32)
+	else
 	{
 		srf32 = (__u32*)surface->data;
-		
 		if (surface->clut.data && color < surface->clut.colors)
 			col=(surface->clut.data[color].a<<24)|(surface->clut.data[color].r<<16)|(surface->clut.data[color].g<<8)|(surface->clut.data[color].b);
 		else
 			col=0x10101*color;
-		col^=0xFF000000;			
+		col^=0xFF000000;
 	}
-	
+
+	if (surface->bpp == 16)
+#if BYTE_ORDER == LITTLE_ENDIAN
+		col16=bswap_16(((col & 0xFF) >> 3) << 11 | ((col & 0xFF00) >> 10) << 5 | (col & 0xFF0000) >> 19);
+#else
+		col16=((col & 0xFF) >> 3) << 11 | ((col & 0xFF00) >> 10) << 5 | (col & 0xFF0000) >> 19;
+#endif
+
 	int xa = start.x(), ya = start.y(), xb = dst.x(), yb = dst.y();
 	int dx, dy, x, y, s1, s2, e, temp, swap, i;
 	dy=abs(yb-ya);
@@ -526,7 +773,7 @@ void gPixmap::line(const gRegion &clip, ePoint start, ePoint dst, gColor color)
 	} else
 		swap=0;
 	e = 2*dy-dx;
-	
+
 	int lasthit = 0;
 	for(i=1; i<=dx; i++)
 	{
@@ -563,20 +810,25 @@ void gPixmap::line(const gRegion &clip, ePoint start, ePoint dst, gColor color)
 			} while (!clip.rects[a].contains(x, y));
 			lasthit = a;
 		}
-		
+
 		if (srf8)
 			srf8[y * stride + x] = color;
-		if (srf32)
+		else if (srf16)
+			srf16[y * stride/2 + x] = col16;
+		else
 			srf32[y * stride/4 + x] = col;
 fail:
 		while (e>=0)
 		{
-			if (swap==1) x+=s1;
-			else y+=s2;
+			if (swap==1)
+				x+=s1;
+			else
+				y+=s2;
 			e-=2*dx;
 		}
-    if (swap==1)
-    	y+=s2;
+
+		if (swap==1)
+			y+=s2;
 		else
 			x+=s1;
 		e+=2*dy;

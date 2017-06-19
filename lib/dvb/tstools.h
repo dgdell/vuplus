@@ -19,9 +19,12 @@ public:
 	eDVBTSTools();
 	~eDVBTSTools();
 
+	void setSource(ePtr<iTsSource> &source, const char *streaminfo_filename=NULL);
+	void closeSource();
+
 	int openFile(const char *filename, int nostreaminfo = 0);
 	void closeFile();
-	
+
 	void setSyncPID(int pid);
 	void setSearchRange(int maxrange);
 	
@@ -71,14 +74,13 @@ public:
 	
 	return values are the new offset, the length of the found frame (both unaligned), and the (signed) 
 	number of frames skipped. */
-	int findFrame(off_t &offset, size_t &len, int &direction, int frame_types = frametypeI);
+	int findFrame(off_t &_iframe_offset, off_t &offset, size_t &len, int &direction, int frame_types = frametypeI);
 	int findNextPicture(off_t &offset, size_t &len, int &distance, int frame_types = frametypeAll);
 private:
 	int m_pid;
 	int m_maxrange;
 
-	eSingleLock m_file_lock;
-	eRawFile m_file;
+	ePtr<iTsSource> m_source;
 
 	int m_begin_valid, m_end_valid;
 	pts_t m_pts_begin, m_pts_end;

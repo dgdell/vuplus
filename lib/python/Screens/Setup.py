@@ -4,6 +4,7 @@ from Components.config import config, ConfigNothing
 from Components.SystemInfo import SystemInfo
 from Components.ConfigList import ConfigListScreen
 from Components.Sources.StaticText import StaticText
+from enigma import eEnv
 
 import xml.etree.cElementTree
 
@@ -14,7 +15,7 @@ try:
 	setupfile = file('data/setup.xml', 'r')
 except:
 	# if not found in the current path, we use the global datadir-path
-	setupfile = file('/usr/share/enigma2/setup.xml', 'r')
+	setupfile = file(eEnv.resolve('${datadir}/enigma2/setup.xml'), 'r')
 setupdom = xml.etree.cElementTree.parse(setupfile)
 setupfile.close()
 
@@ -61,6 +62,17 @@ class Setup(ConfigListScreen, Screen):
 		self.refill(list)
 		self["config"].setList(list)
 
+	def removeEntryNotifier(self):
+		if self.needEntryChange:
+			for item in self.needEntryChange:
+				if self.entryChanged in item.notifiers:
+					item.notifiers.remove(self.entryChanged)
+
+	def entryChanged(self, configElement):
+		list = []
+		self.refill(list)
+		self["config"].setList(list)
+
 	def refill(self, list):
 		xmldata = setupdom.getroot()
 		for x in xmldata.findall("setup"):
@@ -75,6 +87,8 @@ class Setup(ConfigListScreen, Screen):
 		self.skinName = ["setup_" + setup, "Setup" ]
 
 		self.onChangedEntry = [ ]
+
+		self.needEntryChange = [ ]
 
 		self.setup = setup
 		list = []
@@ -113,6 +127,7 @@ class Setup(ConfigListScreen, Screen):
 		return SetupSummary
 
 	def addItems(self, list, parentNode):
+		self.needEntryChange = [ ]
 		for x in parentNode:
 			if x.tag == 'item':
 				item_level = int(x.get("level", 0))
@@ -138,6 +153,14 @@ class Setup(ConfigListScreen, Screen):
 				# the second one is converted to string.
 				if not isinstance(item, ConfigNothing):
 					list.append( (item_text, item) )
+
+					needentrychange = x.get("entrychange")
+					if needentrychange == "yes":
+						self.needEntryChange.append(item)
+						if not self.entryChanged in item.notifiers:
+							item.notifiers.append(self.entryChanged)
+						if not self.removeEntryNotifier in self.onClose:
+							self.onClose.append(self.removeEntryNotifier)
 
 def getSetupTitle(id):
 	xmldata = setupdom.getroot()

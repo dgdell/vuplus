@@ -7,6 +7,8 @@ from enigma import iPlayableService
 
 from Tools.ISO639 import LanguageCodes
 
+from Screens.InfoBar import InfoBar
+
 class Subtitles(Screen, ConfigListScreen):
 	def __init__(self, session, infobar=None):
 		Screen.__init__(self, session)
@@ -19,7 +21,12 @@ class Subtitles(Screen, ConfigListScreen):
 
 		self.list = []
 		ConfigListScreen.__init__(self, self.list)
-		self.infobar = infobar or self.session.infobar
+		if self.session.infobar is None:	
+			if InfoBar.instance:
+				self.infobar = InfoBar.instance
+		else:
+			self.infobar = self.session.infobar
+
 		self.fillList()
 
 		self.__event_tracker = ServiceEventTracker(screen=self, eventmap=

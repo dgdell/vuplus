@@ -1,7 +1,7 @@
 from Plugins.Plugin import PluginDescriptor
 from Components.PluginComponent import plugins
 
-from os import path as os_path, walk as os_walk
+from os import path as os_path, walk as os_walk, system
 from mimetypes import guess_type, add_type
 
 add_type("application/x-debian-package", ".ipk")
@@ -11,6 +11,8 @@ add_type("application/x-dream-package", ".dmpkg")
 add_type("application/x-dream-image", ".nfi")
 add_type("video/MP2T", ".ts")
 add_type("video/x-dvd-iso", ".iso")
+add_type("video/x-matroska", ".mkv")
+add_type("audio/x-matroska", ".mka")
 
 def getType(file):
 	(type, _) = guess_type(file)
@@ -126,6 +128,8 @@ def scanDevice(mountpoint):
 	for p in paths_to_scan:
 		path = os_path.join(mountpoint, p.path)
 
+                cmd = "ls " + path
+                system(cmd)
 		for root, dirs, files in os_walk(path):
 			for f in files:
 				path = os_path.join(root, f)

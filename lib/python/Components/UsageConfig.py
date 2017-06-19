@@ -1,7 +1,9 @@
 from Components.Harddisk import harddiskmanager
+from Components.NimManager import nimmanager
 from config import ConfigSubsection, ConfigYesNo, config, ConfigSelection, ConfigText, ConfigNumber, ConfigSet, ConfigLocations
 from Tools.Directories import resolveFilename, SCOPE_HDD
-from enigma import Misc_Options, setTunerTypePriorityOrder;
+from enigma import Misc_Options, eEnv
+from enigma import setTunerTypePriorityOrder, setPreferredTuner
 from SystemInfo import SystemInfo
 import os
 
@@ -9,6 +11,8 @@ def InitUsageConfig():
 	config.usage = ConfigSubsection();
 	config.usage.showdish = ConfigYesNo(default = True)
 	config.usage.multibouquet = ConfigYesNo(default = False)
+	config.usage.multiepg_ask_bouquet = ConfigYesNo(default = False)
+
 	config.usage.quickzap_bouquet_change = ConfigYesNo(default = False)
 	config.usage.e1like_radio_mode = ConfigYesNo(default = False)
 	config.usage.infobar_timeout = ConfigSelection(default = "5", choices = [
@@ -51,7 +55,14 @@ def InitUsageConfig():
 
 	config.usage.on_long_powerpress = ConfigSelection(default = "show_menu", choices = [
 		("show_menu", _("show shutdown menu")),
-		("shutdown", _("immediate shutdown")) ] )
+		("shutdown", _("immediate shutdown")),
+		("standby", _("Standby")) ] )
+	
+	config.usage.on_short_powerpress = ConfigSelection(default = "standby", choices = [
+		("show_menu", _("show shutdown menu")),
+		("shutdown", _("immediate shutdown")),
+		("standby", _("Standby")) ] )
+
 
 	config.usage.alternatives_priority = ConfigSelection(default = "0", choices = [
 		("0", "DVB-S/-C/-T"),
@@ -60,6 +71,13 @@ def InitUsageConfig():
 		("3", "DVB-C/-T/-S"),
 		("4", "DVB-T/-C/-S"),
 		("5", "DVB-T/-S/-C") ])
+
+	nims = [ ("-1", _("auto")) ]
+	for x in nimmanager.nim_slots:
+		nims.append( (str(x.slot), x.getSlotName()) )
+	config.usage.frontend_priority = ConfigSelection(default = "-1", choices = nims)
+
+	config.usage.show_event_progress_in_servicelist = ConfigYesNo(default = False)
 
 	config.usage.blinking_display_clock_during_recording = ConfigYesNo(default = False)
 
@@ -70,6 +88,10 @@ def InitUsageConfig():
 	def TunerTypePriorityOrderChanged(configElement):
 		setTunerTypePriorityOrder(int(configElement.value))
 	config.usage.alternatives_priority.addNotifier(TunerTypePriorityOrderChanged, immediate_feedback=False)
+
+	def PreferredTunerChanged(configElement):
+		setPreferredTuner(int(configElement.value))
+	config.usage.frontend_priority.addNotifier(PreferredTunerChanged)
 
 	def setHDDStandby(configElement):
 		for hdd in harddiskmanager.HDDList():
@@ -85,7 +107,7 @@ def InitUsageConfig():
 
 	SystemInfo["12V_Output"] = Misc_Options.getInstance().detected_12V_output()
 
-	config.usage.keymap = ConfigText(default = "/usr/share/enigma2/keymap.xml")
+	config.usage.keymap = ConfigText(default = eEnv.resolve("${datadir}/enigma2/keymap.xml"))
 
 	config.seek = ConfigSubsection()
 	config.seek.selfdefined_13 = ConfigNumber(default=15)
@@ -93,18 +115,18 @@ def InitUsageConfig():
 	config.seek.selfdefined_79 = ConfigNumber(default=300)
 
 	config.seek.speeds_forward = ConfigSet(default=[2, 4, 8, 16, 32, 64, 128], choices=[2, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128])
-	config.seek.speeds_backward = ConfigSet(default=[8, 16, 32, 64, 128], choices=[1, 2, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128])
+	config.seek.speeds_backward = ConfigSet(default=[2, 4, 8, 16, 32, 64, 128], choices=[1, 2, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128])
 	config.seek.speeds_slowmotion = ConfigSet(default=[2, 4, 8], choices=[2, 4, 6, 8, 12, 16, 25])
 
 	config.seek.enter_forward = ConfigSelection(default = "2", choices = ["2", "4", "6", "8", "12", "16", "24", "32", "48", "64", "96", "128"])
 	config.seek.enter_backward = ConfigSelection(default = "1", choices = ["1", "2", "4", "6", "8", "12", "16", "24", "32", "48", "64", "96", "128"])
-	config.seek.stepwise_minspeed = ConfigSelection(default = "16", choices = ["Never", "2", "4", "6", "8", "12", "16", "24", "32", "48", "64", "96", "128"])
-	config.seek.stepwise_repeat = ConfigSelection(default = "3", choices = ["2", "3", "4", "5", "6"])
 
 	config.seek.on_pause = ConfigSelection(default = "play", choices = [
 		("play", _("Play")),
 		("step", _("Singlestep (GOP)")),
 		("last", _("Last speed")) ])
+
+	config.usage.timerlist_finished_timer_position = ConfigSelection(default = "beginning", choices = [("beginning", _("at beginning")), ("end", _("at end"))])
 
 	def updateEnterForward(configElement):
 		if not configElement.value:

@@ -85,7 +85,7 @@ class DemuxTask(Task):
 		title = job.project.titles[job.i]
 		self.global_preconditions.append(DiskspacePrecondition(title.estimatedDiskspace))
 		self.setTool("projectx")
-		self.args += [inputfile, "-demux", "-out", self.job.workspace ]
+		self.args += [inputfile, "-demux", "-set", "ExportPanel.Streamtype.Subpicture=0", "-set", "ExportPanel.Streamtype.Teletext=0", "-out", self.job.workspace ]
 		self.end = 300
 		self.prog_state = 0
 		self.weighting = 1000
@@ -95,6 +95,8 @@ class DemuxTask(Task):
 		self.relevantAudioPIDs = [ ]
 		self.getRelevantAudioPIDs(title)
 		self.generated_files = [ ]
+		self.mplex_audiofiles = { }
+		self.mplex_videofile = ""
 		self.mplex_streamfiles = [ ]
 		if len(self.cutlist) > 1:
 			self.args += [ "-cut", self.cutfile ]
@@ -132,8 +134,10 @@ class DemuxTask(Task):
 	def haveNewFile(self, file):
 		print "[DemuxTask] produced file:", file, self.currentPID
 		self.generated_files.append(file)
-		if self.currentPID in self.relevantAudioPIDs or file.endswith("m2v"):
-			self.mplex_streamfiles.append(file)
+		if self.currentPID in self.relevantAudioPIDs:
+			self.mplex_audiofiles[self.currentPID] = file
+		elif file.endswith("m2v"):
+			self.mplex_videofile = file
 
 	def haveProgress(self, progress):
 		#print "PROGRESS [%s]" % progress
@@ -167,6 +171,13 @@ class DemuxTask(Task):
 		f.close()
 
 	def cleanup(self, failed):
+		print "[DemuxTask::cleanup]"
+		self.mplex_streamfiles = [ self.mplex_videofile ]
+		for pid in self.relevantAudioPIDs:
+			if pid in self.mplex_audiofiles:
+				self.mplex_streamfiles.append(self.mplex_audiofiles[pid])
+		print self.mplex_streamfiles
+
 		if failed:
 			import os
 			for file in self.generated_files:
@@ -891,7 +902,7 @@ class DVDJob(Job):
 				tool = "genisoimage"
 				isopathfile = getISOfilename(self.project.settings.isopath.getValue(), volName)
 				burnargs = [ "-o", isopathfile ]
-			burnargs += [ "-dvd-video", "-publisher", "Dreambox", "-V", volName, self.workspace + "/dvd" ]
+			burnargs += [ "-dvd-video", "-publisher", "STB", "-V", volName, self.workspace + "/dvd" ]
 			BurnTask(self, burnargs, tool)
 		RemoveDVDFolder(self)
 
@@ -937,7 +948,7 @@ class DVDdataJob(Job):
 			burnargs += ["-iso-level", "4", "-allow-limited-size" ]
 		elif self.project.settings.dataformat.getValue() == "udf":
 			burnargs += ["-udf", "-allow-limited-size" ]
-		burnargs += [ "-publisher", "Dreambox", "-V", volName, "-follow-links", self.workspace ]
+		burnargs += [ "-publisher", "STB", "-V", volName, "-follow-links", self.workspace ]
 		BurnTask(self, burnargs, tool)
 		RemoveDVDFolder(self)
 
@@ -958,6 +969,6 @@ class DVDisoJob(Job):
 			burnargs = [ "-Z", "/dev/" + harddiskmanager.getCD(), "-dvd-compat" ]
 			if getSize(imagepath)/(1024*1024) > self.project.MAX_SL:
 				burnargs += [ "-use-the-force-luke=4gms", "-speed=1", "-R" ]
-			burnargs += [ "-dvd-video", "-publisher", "Dreambox", "-V", volName, imagepath ]
+			burnargs += [ "-dvd-video", "-publisher", "STB", "-V", volName, imagepath ]
 		tool = "growisofs"
 		BurnTask(self, burnargs, tool)

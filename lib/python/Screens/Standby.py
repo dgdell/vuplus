@@ -3,6 +3,7 @@ from Components.ActionMap import ActionMap
 from Components.config import config
 from Components.AVSwitch import AVSwitch
 from Components.SystemInfo import SystemInfo
+from GlobalActions import globalActionMap
 from enigma import eDVBVolumecontrol
 
 inStandby = None
@@ -41,6 +42,8 @@ class Standby(Screen):
 			"power": self.Power
 		}, -1)
 
+		globalActionMap.setEnabled(False)
+
 		#mute adc
 		self.setMute()
 
@@ -72,6 +75,7 @@ class Standby(Screen):
 		elif self.paused_service:
 			self.paused_service.unPauseService()
 		self.session.screen["Standby"].boolean = False
+		globalActionMap.setEnabled(True)
 
 	def __onFirstExecBegin(self):
 		global inStandby
@@ -98,8 +102,10 @@ from enigma import quitMainloop, iRecordableService
 from Screens.MessageBox import MessageBox
 from time import time
 from Components.Task import job_manager
+from Components.config import ConfigYesNo,NoSave
 
 inTryQuitMainloop = False
+config.misc.DeepStandbyOn = NoSave(ConfigYesNo(default=False))
 
 class TryQuitMainloop(MessageBox):
 	def __init__(self, session, retvalue=1, timeout=-1, default_yes = True):
@@ -156,14 +162,11 @@ class TryQuitMainloop(MessageBox):
 			self.conntected=False
 			self.session.nav.record_event.remove(self.getRecordEvent)
 		if value:
-			# hack .. we dont like to show any other screens when this screen has closed
-			self.onClose = [self.__closed]
-			self.session.dialog_stack = []
-			self.session.summary_stack = [None]
-		MessageBox.close(self, True)
-
-	def __closed(self):
-		quitMainloop(self.retval)
+			if self.retval ==1:
+				config.misc.DeepStandbyOn.value=True
+			quitMainloop(self.retval)
+		else:
+			MessageBox.close(self, True)
 
 	def __onShow(self):
 		global inTryQuitMainloop

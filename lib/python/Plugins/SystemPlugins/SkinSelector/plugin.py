@@ -12,12 +12,13 @@ from Plugins.Plugin import PluginDescriptor
 from Components.config import config
 from Tools.Directories import resolveFilename, SCOPE_PLUGINS
 from os import path, walk
+from enigma import eEnv
 
 class SkinSelector(Screen):
 	# for i18n:
 	# _("Choose your Skin")
 	skinlist = []
-	root = "/usr/share/enigma2/"
+	root = eEnv.resolve("${datadir}/enigma2/")
 
 	def __init__(self, session, args = None):
 
@@ -88,7 +89,7 @@ class SkinSelector(Screen):
 					self.skinlist.append(subdir)
 				else:
 					subdir = "Default Skin"
-					self.skinlist.append(subdir)
+					#self.skinlist.append(subdir)
 
 	def ok(self):
 		if self["SkinList"].getCurrent() == "Default Skin":
@@ -130,4 +131,4 @@ def SkinSelSetup(menuid, **kwargs):
 		return []
 
 def Plugins(**kwargs):
-	return PluginDescriptor(name="Skinselector", description="Select Your Skin", where = PluginDescriptor.WHERE_MENU, fnc=SkinSelSetup)
+	return PluginDescriptor(name="Skinselector", description="Select Your Skin", where = PluginDescriptor.WHERE_MENU, needsRestart = False, fnc=SkinSelSetup)

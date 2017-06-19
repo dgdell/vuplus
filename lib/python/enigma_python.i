@@ -38,7 +38,9 @@ is usually caused by not marking PSignals as immutable.
 #define SWIG_COMPILE
 #include <lib/base/ebase.h>
 #include <lib/base/smartptr.h>
+#include <lib/base/eenv.h>
 #include <lib/base/eerror.h>
+#include <lib/base/etpm.h>
 #include <lib/base/nconfig.h>
 #include <lib/base/message.h>
 #include <lib/driver/rc.h>
@@ -49,7 +51,7 @@ is usually caused by not marking PSignals as immutable.
 #include <lib/gdi/fb.h>
 #include <lib/gdi/font.h>
 #include <lib/gdi/gpixmap.h>
-#include <lib/gdi/gfbdc.h>
+#include <lib/gdi/gmaindc.h>
 #include <lib/gui/ewidget.h>
 #include <lib/gui/elabel.h>
 #include <lib/gui/einput.h>
@@ -88,6 +90,7 @@ is usually caused by not marking PSignals as immutable.
 #include <lib/components/scan.h>
 #include <lib/components/file_eraser.h>
 #include <lib/driver/avswitch.h>
+#include <lib/driver/hdmi_cec.h>
 #include <lib/driver/rfmod.h>
 #include <lib/driver/misc_options.h>
 #include <lib/driver/etimezone.h>
@@ -127,11 +130,13 @@ is usually caused by not marking PSignals as immutable.
 
 
 #define DEBUG
+#define BUILD_VUPLUS
 typedef long time_t;
 %include "typemaps.i"
 %include "std_string.i"
 %include <lib/python/swig.h>
 %include <lib/base/object.h>
+%include <lib/base/eenv.h>
 %include <lib/base/eerror.h>
 
 %immutable eSocketNotifier::activated;
@@ -154,15 +159,18 @@ typedef long time_t;
 %immutable eSocket_UI::socketStateChanged;
 %immutable eDVBResourceManager::frontendUseMaskChanged;
 %immutable eAVSwitch::vcr_sb_notifier;
+%immutable eHdmiCEC::messageReceived;
+%immutable eHdmiCEC::messageReceivedKey;
 %immutable ePythonMessagePump::recv_msg;
 %immutable eDVBLocalTimeHandler::m_timeUpdated;
 %include <lib/base/message.h>
+%include <lib/base/etpm.h>
 %include <lib/base/nconfig.h>
 %include <lib/driver/rc.h>
 %include <lib/gdi/fb.h>
 %include <lib/gdi/font.h>
 %include <lib/gdi/gpixmap.h>
-%include <lib/gdi/gfbdc.h>
+%include <lib/gdi/gmaindc.h>
 %include <lib/gdi/epoint.h>
 %include <lib/gdi/erect.h>
 %include <lib/gdi/esize.h>
@@ -202,6 +210,7 @@ typedef long time_t;
 %include <lib/components/scan.h>
 %include <lib/components/file_eraser.h>
 %include <lib/driver/avswitch.h>
+%include <lib/driver/hdmi_cec.h>
 %include <lib/driver/rfmod.h>
 %include <lib/driver/misc_options.h>
 %include <lib/driver/etimezone.h>
@@ -255,6 +264,12 @@ public:
 
 %typemap(out) PSignal2VoidIRecordableServiceInt {
 	$1 = $input->get();
+}
+
+%template(PSignal2VII) PSignal2<void,int,int>;
+
+%typemap(out) PSignal2VII {
+       $1 = $input->get();
 }
 
 %{
@@ -311,6 +326,14 @@ void setTunerTypePriorityOrder(int order)
 }
 %}
 
+void setPreferredTuner(int);
+%{
+void setPreferredTuner(int index)
+{
+	eDVBFrontend::setPreferredFrontend(index);
+}
+%}
+
 /************** temp *****************/
 
 	/* need a better place for this, i agree. */
@@ -322,6 +345,8 @@ extern int getPrevAsciiCode();
 extern void addFont(const char *filename, const char *alias, int scale_factor, int is_replacement);
 extern const char *getEnigmaVersionString();
 extern void dump_malloc_stats(void);
+extern void setAnimation_current(int a);
+extern void setAnimation_speed(int speed);
 %}
 
 extern void addFont(const char *filename, const char *alias, int scale_factor, int is_replacement);
@@ -331,3 +356,5 @@ extern void quitMainloop(int exit_code);
 extern eApplication *getApplication();
 extern const char *getEnigmaVersionString();
 extern void dump_malloc_stats(void);
+extern void setAnimation_current(int a);
+extern void setAnimation_speed(int speed);

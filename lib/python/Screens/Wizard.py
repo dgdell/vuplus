@@ -10,7 +10,7 @@ from Components.ActionMap import NumberActionMap
 from Components.MenuList import MenuList
 from Components.ConfigList import ConfigList
 from Components.Sources.List import List
-from enigma import eTimer
+from enigma import eTimer, eEnv
 
 from xml.sax import make_parser
 from xml.sax.handler import ContentHandler
@@ -178,7 +178,7 @@ class Wizard(Screen):
 		parser.setContentHandler(wizardHandler)
 		for xmlfile in self.xmlfile:
 			if xmlfile[0] != '/':
-				parser.parse('/usr/share/enigma2/' + xmlfile)
+				parser.parse(eEnv.resolve('${datadir}/enigma2/') + xmlfile)
 			else:
 				parser.parse(xmlfile)
 
@@ -243,7 +243,7 @@ class Wizard(Screen):
 			"7": self.keyNumberGlobal,
 			"8": self.keyNumberGlobal,
 			"9": self.keyNumberGlobal,
-			"0": self.keyNumberGlobal
+			"0": self.keyNumberGlobal,
 		}, -1)
 
 		self["VirtualKB"] = NumberActionMap(["VirtualKeyboardActions"],
@@ -387,9 +387,13 @@ class Wizard(Screen):
 	def keyNumberGlobal(self, number):
 		if (self.wizard[self.currStep]["config"]["screen"] != None):
 			self.configInstance.keyNumberGlobal(number)
+		elif (self.wizard[self.currStep]["config"]["type"] == "dynamic"):
+			self["config"].handleKey(KEY_0 + number)
 
 	def keyGotAscii(self):
 		if (self.wizard[self.currStep]["config"]["screen"] != None):
+			self["config"].handleKey(KEY_ASCII)
+		elif (self.wizard[self.currStep]["config"]["type"] == "dynamic"):
 			self["config"].handleKey(KEY_ASCII)
 		
 	def left(self):
@@ -598,6 +602,7 @@ class Wizard(Screen):
 							self.configInstance = self.session.instantiateDialog(self.wizard[self.currStep]["config"]["screen"])
 						else:
 							self.configInstance = self.session.instantiateDialog(self.wizard[self.currStep]["config"]["screen"], eval(self.wizard[self.currStep]["config"]["args"]))
+						self.configInstance.setAnimationMode(0)
 						self["config"].l.setList(self.configInstance["config"].list)
 						callbacks = self.configInstance["config"].onSelectionChanged
 						self.configInstance["config"].destroy()

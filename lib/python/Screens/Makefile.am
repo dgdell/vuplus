@@ -1,8 +1,8 @@
 installdir = $(pkglibdir)/python/Screens
 
 install_PYTHON = \
-	ChannelSelection.py ClockDisplay.py ConfigMenu.py InfoBar.py Menu.py    \
-	MessageBox.py Screen.py ServiceScan.py TimerEdit.py \
+	AudioSelection.py ChannelSelection.py ClockDisplay.py ConfigMenu.py InfoBar.py \
+	Menu.py MessageBox.py Screen.py ServiceScan.py TimerEdit.py \
 	MovieSelection.py Setup.py About.py HarddiskSetup.py FixedMenu.py \
 	Satconfig.py ScanSetup.py NetworkSetup.py Ci.py TimerEntry.py Volume.py \
 	EpgSelection.py EventView.py Mute.py Standby.py ServiceInfo.py \
@@ -14,5 +14,6 @@ install_PYTHON = \
 	SubtitleDisplay.py SubservicesQuickzap.py ParentalControlSetup.py NumericalTextInputHelpDialog.py \
 	SleepTimerEdit.py Ipkg.py RdsDisplay.py Globals.py DefaultWizard.py \
 	SessionGlobals.py LocationBox.py WizardLanguage.py TaskView.py Rc.py VirtualKeyBoard.py \
-	TextBox.py FactoryReset.py RecordPaths.py UnhandledKey.py ServiceStopScreen.py
+	TextBox.py FactoryReset.py RecordPaths.py UnhandledKey.py ServiceStopScreen.py \
+	InputDeviceSetup.py
 

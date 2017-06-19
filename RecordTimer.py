@@ -102,7 +102,10 @@ class RecordTimerEntry(timer.TimerEntry, object):
 		
 		assert isinstance(serviceref, ServiceReference)
 		
-		self.service_ref = serviceref
+		if serviceref.isRecordable():
+			self.service_ref = serviceref
+		else:
+			self.service_ref = ServiceReference(None)
 		self.eit = eit
 		self.dontSave = False
 		self.name = name
@@ -129,6 +132,7 @@ class RecordTimerEntry(timer.TimerEntry, object):
 	def calculateFilename(self):
 		service_name = self.service_ref.getServiceName()
 		begin_date = strftime("%Y%m%d %H%M", localtime(self.begin))
+		begin_shortdate = strftime("%Y%m%d", localtime(self.begin))
 		
 		print "begin_date: ", begin_date
 		print "service_name: ", service_name
@@ -137,7 +141,15 @@ class RecordTimerEntry(timer.TimerEntry, object):
 		
 		filename = begin_date + " - " + service_name
 		if self.name:
-			filename += " - " + self.name
+			if config.usage.setup_level.index >= 2: # expert+
+				if config.recording.filename_composition.value == "short":
+					filename = begin_shortdate + " - " + self.name
+				elif config.recording.filename_composition.value == "long":
+					filename += " - " + self.name + " - " + self.description
+				else:
+					filename += " - " + self.name # standard
+			else:
+				filename += " - " + self.name
 
 		if config.recording.ascii_filenames.value:
 			filename = ASCIItranslit.legacyEncode(filename)
@@ -285,13 +297,13 @@ class RecordTimerEntry(timer.TimerEntry, object):
 				self.record_service = None
 			if self.afterEvent == AFTEREVENT.STANDBY:
 				if not Screens.Standby.inStandby: # not already in standby
-					Notifications.AddNotificationWithCallback(self.sendStandbyNotification, MessageBox, _("A finished record timer wants to set your\nDreambox to standby. Do that now?"), timeout = 20)
+					Notifications.AddNotificationWithCallback(self.sendStandbyNotification, MessageBox, _("A finished record timer wants to set your\nSTB to standby. Do that now?"), timeout = 20)
 			elif self.afterEvent == AFTEREVENT.DEEPSTANDBY:
 				if not Screens.Standby.inTryQuitMainloop: # not a shutdown messagebox is open
 					if Screens.Standby.inStandby: # in standby
 						RecordTimerEntry.TryQuitMainloop() # start shutdown handling without screen
 					else:
-						Notifications.AddNotificationWithCallback(self.sendTryQuitMainloopNotification, MessageBox, _("A finished record timer wants to shut down\nyour Dreambox. Shutdown now?"), timeout = 20)
+						Notifications.AddNotificationWithCallback(self.sendTryQuitMainloopNotification, MessageBox, _("A finished record timer wants to shut down\nyour STB. Shutdown now?"), timeout = 20)
 			return True
 
 	def setAutoincreaseEnd(self, entry = None):
@@ -307,16 +319,14 @@ class RecordTimerEntry(timer.TimerEntry, object):
 		timersanitycheck = TimerSanityCheck(NavigationInstance.instance.RecordTimer.timer_list, dummyentry)
 		if not timersanitycheck.check():
 			simulTimerList = timersanitycheck.getSimulTimerList()
-			new_end = simulTimerList[1].begin
-			del simulTimerList
-			new_end -= 30				# 30 Sekunden Prepare-Zeit lassen
-		del dummyentry
+			if simulTimerList is not None and len(simulTimerList) > 1:
+				new_end = simulTimerList[1].begin
+				new_end -= 30				# 30 Sekunden Prepare-Zeit lassen
 		if new_end <= time():
 			return False
 		self.end = new_end
 		return True
-	
-	
+
 	def sendStandbyNotification(self, answer):
 		if answer:
 			Notifications.AddNotification(Screens.Standby.Standby)
@@ -505,7 +515,7 @@ class RecordTimer(timer.Timer):
 		checkit = True
 		for timer in root.findall("timer"):
 			newTimer = createTimer(timer)
-			if (self.record(newTimer, True, True) is not None) and (checkit == True):
+			if (self.record(newTimer, True, dosave=False) is not None) and (checkit == True):
 				from Tools.Notifications import AddPopup
 				from Screens.MessageBox import MessageBox
 				AddPopup(_("Timer overlap in timers.xml detected!\nPlease recheck it!"), type = MessageBox.TYPE_ERROR, timeout = 0, id = "TimerLoadFailed")

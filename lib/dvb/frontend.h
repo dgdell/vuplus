@@ -64,6 +64,8 @@ public:
 		CUR_VOLTAGE,          // current voltage
 		CUR_TONE,             // current continuous tone
 		SATCR,                // current SatCR
+		DICTION,              // current diction
+		PIN,                  // pin 
 		NUM_DATA_ENTRIES
 	};
 	Signal1<void,iDVBFrontend*> m_stateChanged;
@@ -71,13 +73,13 @@ private:
 	DECLARE_REF(eDVBFrontend);
 	bool m_simulate;
 	bool m_enabled;
-	int m_type;
+	eDVBFrontend *m_simulate_fe; // only used to set frontend type in dvb.cpp
 	int m_dvbid;
 	int m_slotid;
 	int m_fd;
 	bool m_rotor_mode;
 	bool m_need_rotor_workaround;
-	bool m_can_handle_dvbs2;
+	std::map<fe_delivery_system_t, bool> m_delsys, m_delsys_whitelist;
 	char m_filename[128];
 	char m_description[128];
 #if HAVE_DVB_API_VERSION < 3
@@ -85,11 +87,7 @@ private:
 	char m_sec_filename[128];
 #endif
 	FRONTENDPARAMETERS parm;
-	union {
-		eDVBFrontendParametersSatellite sat;
-		eDVBFrontendParametersCable cab;
-		eDVBFrontendParametersTerrestrial ter;
-	} oparm;
+	eDVBFrontendParameters oparm;
 
 	int m_state;
 	ePtr<iDVBSatelliteEquipmentControl> m_sec;
@@ -110,15 +108,16 @@ private:
 	void feEvent(int);
 	void timeout();
 	void tuneLoop();  // called by m_tuneTimer
+	int tuneLoopInt();
 	void setFrontend(bool recvEvents=true);
 	bool setSecSequencePos(int steps);
 	static int PriorityOrder;
+	static int PreferredFrontendIndex;
 public:
-	eDVBFrontend(int adap, int fe, int &ok, bool simulate=false);
+	eDVBFrontend(int adap, int fe, int &ok, bool simulate=false, eDVBFrontend *simulate_fe=NULL);
 	virtual ~eDVBFrontend();
 
 	int readInputpower();
-	RESULT getFrontendType(int &type);
 	RESULT tune(const iDVBFrontendParameters &where);
 	RESULT prepare_sat(const eDVBFrontendParametersSatellite &, unsigned int timeout);
 	RESULT prepare_cable(const eDVBFrontendParametersCable &);
@@ -130,7 +129,7 @@ public:
 	RESULT sendDiseqc(const eDVBDiseqcCommand &diseqc);
 	RESULT sendToneburst(int burst);
 	RESULT setSEC(iDVBSatelliteEquipmentControl *sec);
-	RESULT setSecSequence(const eSecCommandList &list);
+	RESULT setSecSequence(eSecCommandList &list);
 	RESULT getData(int num, long &data);
 	RESULT setData(int num, long val);
 
@@ -145,15 +144,16 @@ public:
 	bool setSlotInfo(ePyObject obj); // get a tuple (slotid, slotdescr)
 	static void setTypePriorityOrder(int val) { PriorityOrder = val; }
 	static int getTypePriorityOrder() { return PriorityOrder; }
+	static void setPreferredFrontend(int index) { PreferredFrontendIndex = index; }
+	static int getPreferredFrontend() { return PreferredFrontendIndex; }
+	bool supportsDeliverySystem(const fe_delivery_system_t &sys, bool obeywhitelist);
+	void setDeliverySystemWhitelist(const std::vector<fe_delivery_system_t> &whitelist);
 
 	void reopenFrontend();
 	int openFrontend();
-	int closeFrontend(bool force=false);
+	int closeFrontend(bool force=false, bool no_delayed=false);
 	const char *getDescription() const { return m_description; }
 	bool is_simulate() const { return m_simulate; }
-
-	RESULT turnOffSatCR(int satcr);
-	RESULT ScanSatCR();
 };
 
 #endif // SWIG

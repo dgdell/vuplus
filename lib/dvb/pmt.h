@@ -9,6 +9,7 @@
 #include <lib/dvb/idemux.h>
 #include <lib/dvb/esection.h>
 #include <lib/python/python.h>
+#include <lib/python/connections.h>
 #include <dvbsi++/program_map_section.h>
 #include <dvbsi++/program_association_section.h>
 
@@ -20,6 +21,26 @@
 
 class eDVBCAService;
 class eDVBScan;
+
+#include <dvbsi++/application_information_section.h>
+class OCSection : public LongCrcSection
+{
+protected:
+	void *data;
+
+public:
+	OCSection(const uint8_t * const buffer)
+	: LongCrcSection(buffer)
+	{
+		data = malloc(getSectionLength());
+		memcpy(data, buffer, getSectionLength());
+	}
+	~OCSection()
+	{
+		free(data);
+	}
+	void *getData() { return data; }
+};
 
 struct channel_data: public Object
 {
@@ -69,6 +90,27 @@ public:
 
 #endif
 
+#include <list>
+#include <string>
+class HbbTVApplicationInfo
+{
+public:
+	int m_OrgId;
+	int m_AppId;
+	int m_ControlCode;
+	short m_ProfileCode;
+	std::string m_HbbTVUrl;
+	std::string m_ApplicationName;
+public:
+	HbbTVApplicationInfo(int controlCode, int orgid, int appid, std::string hbbtvUrl, std::string applicationName, int profileCode)
+		: m_ControlCode(controlCode), m_HbbTVUrl(hbbtvUrl), m_ApplicationName(applicationName), m_OrgId(orgid), 
+		  m_AppId(appid), m_ProfileCode(profileCode)
+	{}
+};
+typedef std::list<HbbTVApplicationInfo *> HbbTVApplicationInfoList;
+typedef HbbTVApplicationInfoList::iterator HbbTVApplicationInfoListIterator;
+typedef HbbTVApplicationInfoList::const_iterator HbbTVApplicationInfoListConstIterator;
+
 class eDVBServicePMTHandler: public Object
 {
 #ifndef SWIG
@@ -86,8 +128,8 @@ class eDVBServicePMTHandler: public Object
 	eUsePtr<iDVBChannel> m_channel;
 	eUsePtr<iDVBPVRChannel> m_pvr_channel;
 	ePtr<eDVBResourceManager> m_resourceManager;
-	ePtr<iDVBDemux> m_demux;
-	
+	ePtr<iDVBDemux> m_demux, m_pvr_demux_tmp;
+
 	void channelStateChanged(iDVBChannel *);
 	ePtr<eConnection> m_channelStateChanged_connection;
 	void channelEvent(iDVBChannel *, int event);
@@ -95,13 +137,27 @@ class eDVBServicePMTHandler: public Object
 	void SDTScanEvent(int);
 	ePtr<eConnection> m_scan_event_connection;
 
+	eAUTable<eTable<ApplicationInformationSection> > m_AIT;
+	eAUTable<eTable<OCSection> > m_OC;
+
 	void PMTready(int error);
 	void PATready(int error);
 	
 	int m_pmt_pid;
 	
+	void AITready(int error);
+	void OCready(int error);
+	int m_dsmcc_pid;
+	int m_ait_pid;
+	HbbTVApplicationInfoList m_HbbTVApplications;
+	std::string m_HBBTVUrl;
+	std::string m_ApplicationName;
+	unsigned char m_AITData[4096];
+	
 	int m_use_decode_demux;
 	uint8_t m_decode_demux_num;
+	ePtr<eTimer> m_no_pat_entry_delay;
+	uint8_t mDemuxId;
 public:
 	eDVBServicePMTHandler();
 	~eDVBServicePMTHandler();
@@ -127,6 +183,8 @@ public:
 		eventSOF,          // seek pre start
 		eventEOF,          // a file playback did end
 		
+		eventHBBTVInfo, /* HBBTV information was detected in the AIT */
+		
 		eventMisconfiguration, // a channel was not found in any list, or no frontend was found which could provide this channel
 	};
 #ifndef SWIG
@@ -144,7 +202,7 @@ public:
 	{
 		int pid,
 		    rdsPid; // hack for some radio services which transmit radiotext on different pid (i.e. harmony fm, HIT RADIO FFH, ...)
-		enum { atMPEG, atAC3, atDTS, atAAC, atAACHE, atLPCM };
+		enum { atMPEG, atAC3, atDTS, atAAC, atAACHE, atLPCM, atDTSHD, atDDP  };
 		int type; // mpeg2, ac3, dts, ...
 		
 		int component_tag;
@@ -181,22 +239,30 @@ public:
 
 	struct program
 	{
+		struct capid_pair
+		{
+			uint16_t caid;
+			int capid;
+			bool operator< (const struct capid_pair &t) const { return t.caid < caid; }
+		};
 		std::vector<videoStream> videoStreams;
 		std::vector<audioStream> audioStreams;
 		int defaultAudioStream;
 		std::vector<subtitleStream> subtitleStreams;
-		std::set<uint16_t> caids;
+		std::list<capid_pair> caids;
 		int pcrPid;
 		int pmtPid;
 		int textPid;
+		int aitPid;
 		bool isCrypted() { return !caids.empty(); }
 		PyObject *createPythonObject();
 	};
 
-	int getProgramInfo(struct program &program);
+	int getProgramInfo(program &program);
 	int getDataDemux(ePtr<iDVBDemux> &demux);
 	int getDecodeDemux(ePtr<iDVBDemux> &demux);
-	PyObject *getCaIds();
+	PyObject *getCaIds(bool pair=false); // caid / ecmpid pair
+	PyObject *getHbbTVApplications(void); 
 	
 	int getPVRChannel(ePtr<iDVBPVRChannel> &pvr_channel);
 	int getServiceReference(eServiceReferenceDVB &service) { service = m_reference; return 0; }
@@ -204,12 +270,22 @@ public:
 	int getPMT(ePtr<eTable<ProgramMapSection> > &ptr) { return m_PMT.getCurrent(ptr); }
 	int getChannel(eUsePtr<iDVBChannel> &channel);
 	void resetCachedProgram() { m_have_cached_program = false; }
+	void sendEventNoPatEntry();
 
+	void getHBBTVUrl(std::string &ret) { ret = m_HBBTVUrl; }
+	void getDemuxID(int &id) { id = mDemuxId; }
+
+	/* deprecated interface */
 	int tune(eServiceReferenceDVB &ref, int use_decode_demux, eCueSheet *sg=0, bool simulate=false, eDVBService *service = 0);
+
+	/* new interface */
+	int tuneExt(eServiceReferenceDVB &ref, int use_decode_demux, ePtr<iTsSource> &, const char *streaminfo_file, eCueSheet *sg=0, bool simulate=false, eDVBService *service = 0, bool isstreamclient=false);
+
 	void free();
 private:
 	bool m_have_cached_program;
 	program m_cached_program;
+	bool m_isstreamclient;
 #endif
 };
 

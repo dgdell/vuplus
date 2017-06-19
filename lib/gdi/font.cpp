@@ -6,16 +6,19 @@
 #include <pthread.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <byteswap.h>
+
+#ifndef BYTE_ORDER
+#error "no BYTE_ORDER defined!"
+#endif
 
 // use this for init Freetype...
 #include <ft2build.h>
 #include FT_FREETYPE_H
-#ifdef HAVE_FREETYPE2
 #define FTC_Image_Cache_New(a,b)	FTC_ImageCache_New(a,b)
 #define FTC_Image_Cache_Lookup(a,b,c,d)	FTC_ImageCache_Lookup(a,b,c,d,NULL)
 #define FTC_SBit_Cache_New(a,b)		FTC_SBitCache_New(a,b)
 #define FTC_SBit_Cache_Lookup(a,b,c,d)	FTC_SBitCache_Lookup(a,b,c,d,NULL)
-#endif
 
 #include <lib/base/eerror.h>
 #include <lib/gdi/lcd.h>
@@ -24,22 +27,13 @@
 #include <lib/base/init.h>
 #include <lib/base/init_num.h>
 
-#define HAVE_FRIBIDI
-// until we have it in the cdk
-
-#ifdef HAVE_FRIBIDI
 #include <fribidi/fribidi.h>
-#endif
 
 #include <map>
 
 fontRenderClass *fontRenderClass::instance;
 
 static pthread_mutex_t ftlock=PTHREAD_ADAPTIVE_MUTEX_INITIALIZER_NP;
-
-#ifndef HAVE_FREETYPE2
-static FTC_Font cache_current_font=0;
-#endif
 
 struct fntColorCacheKey
 {
@@ -205,12 +199,8 @@ float fontRenderClass::getLineHeight(const gFont& font)
 		return 0;
 	singleLock s(ftlock);
 	FT_Face current_face;
-#ifdef HAVE_FREETYPE2
 	if ((FTC_Manager_LookupFace(cacheManager, fnt->scaler.face_id, &current_face) < 0) ||
 	    (FTC_Manager_LookupSize(cacheManager, &fnt->scaler, &fnt->size) < 0))
-#else
-	if (FTC_Manager_Lookup_Size(cacheManager, &fnt->font.font, &current_face, &fnt->size)<0)
-#endif
 	{
 		eDebug("FTC_Manager_Lookup_Size failed!");
 		return 0;
@@ -258,7 +248,6 @@ DEFINE_REF(Font);
 Font::Font(fontRenderClass *render, FTC_FaceID faceid, int isize, int tw): tabwidth(tw)
 {
 	renderer=render;
-#ifdef HAVE_FREETYPE2
 	font.face_id = faceid;
 	font.width = isize;
 	font.height = isize;
@@ -267,12 +256,6 @@ Font::Font(fontRenderClass *render, FTC_FaceID faceid, int isize, int tw): tabwi
 	scaler.width = isize;
 	scaler.height = isize;
 	scaler.pixel = 1;
-#else
-	font.font.face_id=faceid;
-	font.font.pix_width	= isize;
-	font.font.pix_height = isize;
-	font.image_type = ftc_image_grays;
-#endif
 	height=isize;
 	if (tabwidth==-1)
 		tabwidth=8*isize;
@@ -341,6 +324,8 @@ int eTextPara::appendGlyph(Font *current_font, FT_Face current_face, FT_UInt gly
 				i->x-=offset.x();
 				i->y-=offset.y();
 				i->bbox.moveBy(-offset.x(), -offset.y());
+				--lineChars.back();
+				++charCount;
 			} while (i-- != glyphs.rbegin()); // rearrange them into the next line
 			cursor+=ePoint(linelength, 0);  // put the cursor after that line
 		} else
@@ -378,6 +363,7 @@ int eTextPara::appendGlyph(Font *current_font, FT_Face current_face, FT_UInt gly
 	ng.glyph_index = glyphIndex;
 	ng.flags = flags;
 	glyphs.push_back(ng);
+	++charCount;
 
 		/* when we have a SHY, don't xadvance. It will either be the last in the line (when used for breaking), or not displayed. */
 	if (!(flags & GS_SOFTHYPHEN))
@@ -425,7 +411,13 @@ void eTextPara::newLine(int flags)
 	cursor.setX(left);
 	previous=0;
 	int linegap=current_face->size->metrics.height-(current_face->size->metrics.ascender+current_face->size->metrics.descender);
+
+	lineOffsets.push_back(cursor.y());
+	lineChars.push_back(charCount);
+	charCount=0;
+
 	cursor+=ePoint(0, (current_face->size->metrics.ascender+current_face->size->metrics.descender+linegap)>>6);
+
 	if (maximum.height()<cursor.y())
 		maximum.setHeight(cursor.y());
 	previous=0;
@@ -460,18 +452,12 @@ void eTextPara::setFont(Font *fnt, Font *replacement)
 			// we ask for replacment_font first becauseof the cache
 	if (replacement_font)
 	{
-#ifdef HAVE_FREETYPE2
 		if ((FTC_Manager_LookupFace(fontRenderClass::instance->cacheManager,
 					    replacement_font->scaler.face_id,
 					    &replacement_face) < 0) ||
 		    (FTC_Manager_LookupSize(fontRenderClass::instance->cacheManager,
 					    &replacement_font->scaler,
 					    &replacement_font->size) < 0))
-#else
-		if (FTC_Manager_Lookup_Size(fontRenderClass::instance->cacheManager, 
-				&replacement_font->font.font, &replacement_face, 
-				&replacement_font->size)<0)
-#endif
 		{
 			eDebug("FTC_Manager_Lookup_Size failed!");
 			return;
@@ -479,24 +465,17 @@ void eTextPara::setFont(Font *fnt, Font *replacement)
 	}
 	if (current_font)
 	{
-#ifdef HAVE_FREETYPE2
 		if ((FTC_Manager_LookupFace(fontRenderClass::instance->cacheManager,
 					    current_font->scaler.face_id,
 					    &current_face) < 0) ||
 		    (FTC_Manager_LookupSize(fontRenderClass::instance->cacheManager,
 					    &current_font->scaler,
 					    &current_font->size) < 0))
-#else
-		if (FTC_Manager_Lookup_Size(fontRenderClass::instance->cacheManager, &current_font->font.font, &current_face, &current_font->size)<0)
-#endif
 		{
 			eDebug("FTC_Manager_Lookup_Size failed!");
 			return;
 		}
 	}
-#ifndef HAVE_FREETYPE2
-	cache_current_font=&current_font->font.font;
-#endif
 	previous=0;
 	use_kerning=FT_HAS_KERNING(current_face);
 }
@@ -511,7 +490,6 @@ int eTextPara::renderString(const char *string, int rflags)
 	if (!current_font)
 		return -1;
 
-#ifdef HAVE_FREETYPE2
 	if ((FTC_Manager_LookupFace(fontRenderClass::instance->cacheManager,
  				    current_font->scaler.face_id,
  				    &current_face) < 0) ||
@@ -522,17 +500,6 @@ int eTextPara::renderString(const char *string, int rflags)
 		eDebug("FTC_Manager_Lookup_Size failed!");
 		return -1;
 	}
-#else
-	if (&current_font->font.font != cache_current_font)
-	{
-		if (FTC_Manager_Lookup_Size(fontRenderClass::instance->cacheManager, &current_font->font.font, &current_face, &current_font->size)<0)
-		{
-			eDebug("FTC_Manager_Lookup_Size failed!");
-			return -1;
-		}
-		cache_current_font=&current_font->font.font;
-	}
-#endif
 
 	if (!current_face)
 		eFatal("eTextPara::renderString: no current_face");
@@ -595,22 +562,16 @@ int eTextPara::renderString(const char *string, int rflags)
 	shape(uc_shape, uc_string);
 	
 		// now do the usual logical->visual reordering
-#ifdef HAVE_FRIBIDI	
+	int size=uc_shape.size();
 	FriBidiCharType dir=FRIBIDI_TYPE_ON;
-	{
-		int size=uc_shape.size();
-		uc_visual.resize(size);
-		// gaaanz lahm, aber anders geht das leider nicht, sorry.
-		FriBidiChar array[size], target[size];
-		std::copy(uc_shape.begin(), uc_shape.end(), array);
-		fribidi_log2vis(array, size, &dir, target, 0, 0, 0);
-		uc_visual.assign(target, target+size);
-	}
-#else
-	uc_visual=uc_shape;
-#endif
+	uc_visual.resize(size);
+	// gaaanz lahm, aber anders geht das leider nicht, sorry.
+	FriBidiChar array[size], target[size];
+	std::copy(uc_shape.begin(), uc_shape.end(), array);
+	fribidi_log2vis(array, size, &dir, target, 0, 0, 0);
+	uc_visual.assign(target, target+size);
 
-	glyphs.reserve(uc_visual.size());
+	glyphs.reserve(size);
 	
 	int nextflags = 0;
 	
@@ -702,10 +663,19 @@ nprint:	isprintable=0;
 	}
 	bboxValid=false;
 	calc_bbox();
-#ifdef HAVE_FRIBIDI
 	if (dir & FRIBIDI_MASK_RTL)
+	{
 		realign(dirRight);
-#endif
+		doTopBottomReordering=true;
+	}
+
+	if (charCount)
+	{
+		lineOffsets.push_back(cursor.y());
+		lineChars.push_back(charCount);
+		charCount=0;
+	}
+
 	return 0;
 }
 
@@ -716,7 +686,6 @@ void eTextPara::blit(gDC &dc, const ePoint &offset, const gRGB &background, cons
 	if (!current_font)
 		return;
 
-#ifdef HAVE_FREETYPE2
 	if ((FTC_Manager_LookupFace(fontRenderClass::instance->cacheManager,
  				    current_font->scaler.face_id,
  				    &current_face) < 0) ||
@@ -727,17 +696,6 @@ void eTextPara::blit(gDC &dc, const ePoint &offset, const gRGB &background, cons
 		eDebug("FTC_Manager_Lookup_Size failed!");
 		return;
 	}
-#else
-	if (&current_font->font.font != cache_current_font)
-	{
-		if (FTC_Manager_Lookup_Size(fontRenderClass::instance->cacheManager, &current_font->font.font, &current_face, &current_font->size)<0)
-		{
-			eDebug("FTC_Manager_Lookup_Size failed!");
-			return;
-		}
-		cache_current_font=&current_font->font.font;
-	}
-#endif
 
 	ePtr<gPixmap> target;
 	dc.getPixmap(target);
@@ -748,8 +706,9 @@ void eTextPara::blit(gDC &dc, const ePoint &offset, const gRGB &background, cons
 	gColor *lookup8, lookup8_invert[16];
 	gColor *lookup8_normal=0;
 
+	__u16 lookup16_normal[16], lookup16_invert[16], *lookup16;
 	__u32 lookup32_normal[16], lookup32_invert[16], *lookup32;
-	
+
 	if (surface->bpp == 8)
 	{
 		if (surface->clut.data)
@@ -763,10 +722,33 @@ void eTextPara::blit(gDC &dc, const ePoint &offset, const gRGB &background, cons
 			opcode=0;
 		} else
 			opcode=1;
+	} else if (surface->bpp == 16)
+	{
+		opcode=2;
+		for (int i=0; i<16; ++i)
+		{
+#define BLEND(y, x, a) (y + (((x-y) * a)>>8))
+			unsigned char da = background.a, dr = background.r, dg = background.g, db = background.b;
+			int sa = i * 16;
+			if (sa < 256)
+			{
+				dr = BLEND(background.r, foreground.r, sa) & 0xFF;
+				dg = BLEND(background.g, foreground.g, sa) & 0xFF;
+				db = BLEND(background.b, foreground.b, sa) & 0xFF;
+			}
+#undef BLEND
+#if BYTE_ORDER == LITTLE_ENDIAN
+			lookup16_normal[i] = bswap_16(((db >> 3) << 11) | ((dg >> 2) << 5) | (dr >> 3));
+#else
+			lookup16_normal[i] = ((db >> 3) << 11) | ((dg >> 2) << 5) | (dr >> 3);
+#endif
+			da ^= 0xFF;
+		}
+		for (int i=0; i<16; ++i)
+			lookup16_invert[i]=lookup16_normal[i^0xF];
 	} else if (surface->bpp == 32)
 	{
 		opcode=3;
-
 		for (int i=0; i<16; ++i)
 		{
 #define BLEND(y, x, a) (y + (((x-y) * a)>>8))
@@ -791,35 +773,47 @@ void eTextPara::blit(gDC &dc, const ePoint &offset, const gRGB &background, cons
 		eWarning("can't render to %dbpp", surface->bpp);
 		return;
 	}
-	
+
 	gRegion area(eRect(0, 0, surface->x, surface->y));
 	gRegion clip = dc.getClip() & area;
 
 	int buffer_stride=surface->stride;
-	
+
 	for (unsigned int c = 0; c < clip.rects.size(); ++c)
 	{
-		for (glyphString::iterator i(glyphs.begin()); i != glyphs.end(); ++i)
+		std::list<int>::reverse_iterator line_offs_it(lineOffsets.rbegin());
+		std::list<int>::iterator line_chars_it(lineChars.begin());
+		int line_offs=0;
+		int line_chars=0;
+		for (glyphString::iterator i(glyphs.begin()); i != glyphs.end(); ++i, --line_chars)
 		{
+			while(!line_chars)
+			{
+				line_offs = *(line_offs_it++);
+				line_chars = *(line_chars_it++);
+			}
+
 			if (i->flags & GS_SOFTHYPHEN)
 				continue;
 
 			if (!(i->flags & GS_INVERT))
 			{
 				lookup8 = lookup8_normal;
+				lookup16 = lookup16_normal;
 				lookup32 = lookup32_normal;
 			} else
 			{
 				lookup8 = lookup8_invert;
+				lookup16 = lookup16_invert;
 				lookup32 = lookup32_invert;
 			}
-		
+
 			static FTC_SBit glyph_bitmap;
 			if (fontRenderClass::instance->getGlyphBitmap(&i->font->font, i->glyph_index, &glyph_bitmap))
 				continue;
 			int rx=i->x+glyph_bitmap->left + offset.x();
-			int ry=i->y-glyph_bitmap->top  + offset.y();
-		
+			int ry=(doTopBottomReordering ? line_offs : i->y) - glyph_bitmap->top + offset.y();
+
 			__u8 *d=(__u8*)(surface->data)+buffer_stride*ry+rx*surface->bypp;
 			__u8 *s=glyph_bitmap->buffer;
 			register int sx=glyph_bitmap->width;
@@ -845,46 +839,76 @@ void eTextPara::blit(gDC &dc, const ePoint &offset, const gRGB &background, cons
 				d+=diff*buffer_stride;
 			}
 			if (sx>0)
-				for (int ay=0; ay<sy; ay++)
-				{
-					if (!opcode)		// 4bit lookup to 8bit
+			{
+				switch(opcode) {
+				case 0: // 4bit lookup to 8bit
+					for (int ay=0; ay<sy; ay++)
 					{
 						register __u8 *td=d;
 						register int ax;
-						
 						for (ax=0; ax<sx; ax++)
-						{	
+						{
 							register int b=(*s++)>>4;
 							if(b)
 								*td++=lookup8[b];
 							else
 								td++;
 						}
-					} else if (opcode == 1)	// 8bit direct
+						s+=glyph_bitmap->pitch-sx;
+						d+=buffer_stride;
+					}
+					break;
+				case 1: // 8bit direct
+					for (int ay=0; ay<sy; ay++)
 					{
 						register __u8 *td=d;
 						register int ax;
 						for (ax=0; ax<sx; ax++)
-						{	
+						{
 							register int b=*s++;
 							*td++^=b;
 						}
-					} else
+						s+=glyph_bitmap->pitch-sx;
+						d+=buffer_stride;
+					}
+					break;
+				case 2: // 16bit
+					for (int ay=0; ay<sy; ay++)
+					{
+						register __u16 *td=(__u16*)d;
+						register int ax;
+						for (ax=0; ax<sx; ax++)
+						{
+							register int b=(*s++)>>4;
+							if(b)
+								*td++=lookup16[b];
+							else
+								td++;
+						}
+						s+=glyph_bitmap->pitch-sx;
+						d+=buffer_stride;
+					}
+					break;
+				case 3: // 32bit
+					for (int ay=0; ay<sy; ay++)
 					{
 						register __u32 *td=(__u32*)d;
 						register int ax;
 						for (ax=0; ax<sx; ax++)
-						{	
+						{
 							register int b=(*s++)>>4;
 							if(b)
 								*td++=lookup32[b];
 							else
 								td++;
 						}
+						s+=glyph_bitmap->pitch-sx;
+						d+=buffer_stride;
 					}
-					s+=glyph_bitmap->pitch-sx;
-					d+=buffer_stride;
+				default:
+					break;
 				}
+			}
 		}
 	}
 }

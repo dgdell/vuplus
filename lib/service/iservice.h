@@ -289,6 +289,7 @@ public:
 		sFileSize,
 
 		sCAIDs,
+		sCAIDPIDs,
 		sVideoType, 		/* MPEG2 MPEG4 */
 
 		sTags,  			/* space seperated list of tags */
@@ -357,6 +358,9 @@ public:
 		sTagChannelMode,
 
 		sTransferBPS,
+
+		sHBBTVUrl,
+		sLiveStreamDemuxId,
 
 		sUser = 0x100
 	};
@@ -835,6 +839,7 @@ public:
 		evBuffering,
 
 		evStopped,
+		evHBBTVInfo,
 
 		evUser = 0x100
 	};

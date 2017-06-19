@@ -2,12 +2,13 @@ from Screen import Screen
 from Components.ConfigList import ConfigListScreen
 from Components.config import config, ConfigSubsection, ConfigSelection, getConfigListEntry
 from Components.SystemInfo import SystemInfo
+from Components.Task import job_manager
 from InfoBarGenerics import InfoBarNotifications
 import Screens.Standby
 from Tools import Notifications
 
 class JobView(InfoBarNotifications, Screen, ConfigListScreen):
-	def __init__(self, session, job, parent=None, cancelable = True, backgroundable = True):
+	def __init__(self, session, job, parent=None, cancelable = True, backgroundable = True, afterEventChangeable = True):
 		from Components.Sources.StaticText import StaticText
 		from Components.Sources.Progress import Progress
 		from Components.Sources.Boolean import Boolean
@@ -50,11 +51,15 @@ class JobView(InfoBarNotifications, Screen, ConfigListScreen):
 			shutdownString = _("shut down")
 		self.settings.afterEvent = ConfigSelection(choices = [("nothing", _("do nothing")), ("close", _("Close")), ("standby", _("go to standby")), ("deepstandby", shutdownString)], default = self.job.afterEvent or "nothing")
 		self.job.afterEvent = self.settings.afterEvent.getValue()
+		self.afterEventChangeable = afterEventChangeable
 		self.setupList()
 		self.state_changed()
 
 	def setupList(self):
-		self["config"].setList( [ getConfigListEntry(_("After event"), self.settings.afterEvent) ])
+		if self.afterEventChangeable:
+			self["config"].setList( [ getConfigListEntry(_("After event"), self.settings.afterEvent) ])
+		else:
+			self["config"].hide()
 		self.job.afterEvent = self.settings.afterEvent.getValue()
 
 	def keyLeft(self):
@@ -104,25 +109,34 @@ class JobView(InfoBarNotifications, Screen, ConfigListScreen):
 			self.close(False)
 
 	def abort(self):
-		if self.job.status in (self.job.FINISHED, self.job.FAILED):
+		if self.job.status == self.job.NOT_STARTED:
+			job_manager.active_jobs.remove(self.job)
 			self.close(False)
-		if self["cancelable"].boolean == True:
+		elif self.job.status == self.job.IN_PROGRESS and self["cancelable"].boolean == True:
 			self.job.cancel()
+		else:
+			self.close(False)
 
 	def performAfterEvent(self):
 		self["config"].hide()
 		if self.settings.afterEvent.getValue() == "nothing":
 			return
-		elif self.settings.afterEvent.getValue() == "close":
-			self.abort()
+		elif self.settings.afterEvent.getValue() == "close" and self.job.status == self.job.FINISHED:
+			self.close(False)
 		from Screens.MessageBox import MessageBox
 		if self.settings.afterEvent.getValue() == "deepstandby":
 			if not Screens.Standby.inTryQuitMainloop:
-				Notifications.AddNotificationWithCallback(self.sendTryQuitMainloopNotification, MessageBox, _("A sleep timer wants to shut down\nyour Dreambox. Shutdown now?"), timeout = 20)
+				Notifications.AddNotificationWithCallback(self.sendTryQuitMainloopNotification, MessageBox, _("A sleep timer wants to shut down\nyour STB. Shutdown now?"), timeout = 20)
 		elif self.settings.afterEvent.getValue() == "standby":
 			if not Screens.Standby.inStandby:
-				Notifications.AddNotificationWithCallback(self.sendStandbyNotification, MessageBox, _("A sleep timer wants to set your\nDreambox to standby. Do that now?"), timeout = 20)
+				Notifications.AddNotificationWithCallback(self.sendStandbyNotification, MessageBox, _("A sleep timer wants to set your\nSTB to standby. Do that now?"), timeout = 20)
 
+	def checkNotifications(self):
+		InfoBarNotifications.checkNotifications(self)
+		if Notifications.notifications == []:
+			if self.settings.afterEvent.getValue() == "close" and self.job.status == self.job.FAILED:
+				self.close(False)
+		
 	def sendStandbyNotification(self, answer):
 		if answer:
 			Notifications.AddNotification(Screens.Standby.Standby)

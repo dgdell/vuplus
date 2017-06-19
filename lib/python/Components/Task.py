@@ -64,11 +64,10 @@ class Job(object):
 	def runNext(self):
 		if self.current_task == len(self.tasks):
 			if len(self.resident_tasks) == 0:
-				cb = self.callback
-				self.callback = None
 				self.status = self.FINISHED
 				self.state_changed()
-				cb(self, None, [])
+				self.callback(self, None, [])
+				self.callback = None
 			else:
 				print "still waiting for %d resident task(s) %s to finish" % (len(self.resident_tasks), str(self.resident_tasks))
 		else:
@@ -109,7 +108,6 @@ class Job(object):
 			self.tasks[i].abort()
 
 	def cancel(self):
-		# some Jobs might have a better idea of how to cancel a job
 		self.abort()
 
 class Task(object):
@@ -306,6 +304,7 @@ class JobManager:
 			list.append(self.active_job)
 		list += self.active_jobs
 		return list
+
 # some examples:
 #class PartitionExistsPostcondition:
 #	def __init__(self, device):

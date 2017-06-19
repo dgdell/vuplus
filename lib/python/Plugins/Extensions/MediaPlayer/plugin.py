@@ -110,7 +110,7 @@ class MediaPlayer(Screen, InfoBarBase, InfoBarSeek, InfoBarAudioSelection, InfoB
 
 		# 'None' is magic to start at the list of mountpoints
 		defaultDir = config.mediaplayer.defaultDir.getValue()
-		self.filelist = FileList(defaultDir, matchingPattern = "(?i)^.*\.(mp2|mp3|ogg|ts|wav|wave|m3u|pls|e2pls|mpg|vob|avi|divx|m4v|mkv|mp4|m4a|dat|flac|mov)", useServiceRef = True, additionalExtensions = "4098:m3u 4098:e2pls 4098:pls")
+		self.filelist = FileList(defaultDir, matchingPattern = "(?i)^.*\.(mp2|mp3|ogg|ts|wav|wave|m3u|pls|e2pls|mpg|vob|avi|divx|m4v|mkv|mp4|m4a|dat|flac|mov|m2ts|flv|dts|3gp|3g2|mts|wmv|asf|wma)", useServiceRef = True, additionalExtensions = "4098:m3u 4098:e2pls 4098:pls")
 		self["filelist"] = self.filelist
 
 		self.playlist = MyPlayList()
@@ -137,8 +137,8 @@ class MediaPlayer(Screen, InfoBarBase, InfoBarSeek, InfoBarAudioSelection, InfoB
 
 		self.seek_target = None
 
-		from Plugins.SystemPlugins.Hotplug.plugin import hotplugNotifier
-		hotplugNotifier.append(self.hotplugCB)
+#		from Plugins.SystemPlugins.Hotplug.plugin import hotplugNotifier
+#		hotplugNotifier.append(self.hotplugCB)
 
 		class MoviePlayerActionMap(NumberActionMap):
 			def __init__(self, player, contexts = [ ], actions = { }, prio=0):
@@ -168,8 +168,10 @@ class MediaPlayer(Screen, InfoBarBase, InfoBarSeek, InfoBarAudioSelection, InfoB
 				"prevBouquet": (self.switchToPlayList, _("switch to playlist")),
 				"nextBouquet": (self.switchToFileList, _("switch to filelist")),
 				"delete": (self.deletePlaylistEntry, _("delete playlist entry")),
-				"shift_stop": (self.clear_playlist, _("clear playlist")),
-				"shift_record": (self.playlist.PlayListShuffle, _("shuffle playlist")),
+#				"shift_stop": (self.clear_playlist, _("clear playlist")),
+#				"shift_record": (self.playlist.PlayListShuffle, _("shuffle playlist")),
+				"shift_stop": self.clear_playlist,
+				"shift_record": self.playlist.PlayListShuffle,
 				"subtitles": (self.subtitleSelection, _("Subtitle selection")),
 			}, -2)
 
@@ -248,8 +250,8 @@ class MediaPlayer(Screen, InfoBarBase, InfoBarSeek, InfoBarAudioSelection, InfoB
 		if config.mediaplayer.saveDirOnExit.getValue():
 			config.mediaplayer.defaultDir.setValue(self.filelist.getCurrentDirectory())
 			config.mediaplayer.defaultDir.save()
-		from Plugins.SystemPlugins.Hotplug.plugin import hotplugNotifier
-		hotplugNotifier.remove(self.hotplugCB)
+#	from Plugins.SystemPlugins.Hotplug.plugin import hotplugNotifier
+#	hotplugNotifier.remove(self.hotplugCB)
 		del self["coverArt"].picload
 		self.close()
 
@@ -277,13 +279,13 @@ class MediaPlayer(Screen, InfoBarBase, InfoBarSeek, InfoBarAudioSelection, InfoB
 		currPlay = self.session.nav.getCurrentService()
 		sTagAudioCodec = currPlay.info().getInfoString(iServiceInformation.sTagAudioCodec)
 		print "[__evAudioDecodeError] audio-codec %s can't be decoded by hardware" % (sTagAudioCodec)
-		self.session.open(MessageBox, _("This Dreambox can't decode %s streams!") % sTagAudioCodec, type = MessageBox.TYPE_INFO,timeout = 20 )
+		self.session.open(MessageBox, _("This STB can't decode %s streams!") % sTagAudioCodec, type = MessageBox.TYPE_INFO,timeout = 20 )
 
 	def __evVideoDecodeError(self):
 		currPlay = self.session.nav.getCurrentService()
 		sTagVideoCodec = currPlay.info().getInfoString(iServiceInformation.sTagVideoCodec)
 		print "[__evVideoDecodeError] video-codec %s can't be decoded by hardware" % (sTagVideoCodec)
-		self.session.open(MessageBox, _("This Dreambox can't decode %s streams!") % sTagVideoCodec, type = MessageBox.TYPE_INFO,timeout = 20 )
+		self.session.open(MessageBox, _("This STB can't decode %s streams!") % sTagVideoCodec, type = MessageBox.TYPE_INFO,timeout = 20 )
 
 	def __evPluginError(self):
 		currPlay = self.session.nav.getCurrentService()
@@ -820,7 +822,7 @@ class MediaPlayer(Screen, InfoBarBase, InfoBarSeek, InfoBarAudioSelection, InfoB
 	
 	def playEntry(self):
 		if len(self.playlist.getServiceRefList()):
-			audio_extensions = (".mp2", ".mp3", ".wav", ".ogg", "flac", "m4a")
+			audio_extensions = (".mp2", ".mp3", ".wav", ".ogg", ".flac", ".m4a", ".dts")
 			needsInfoUpdate = False
 			currref = self.playlist.getServiceRefList()[self.playlist.getCurrentIndex()]
 			if self.session.nav.getCurrentlyPlayingServiceReference() is None or currref != self.session.nav.getCurrentlyPlayingServiceReference():
@@ -833,7 +835,11 @@ class MediaPlayer(Screen, InfoBarBase, InfoBarSeek, InfoBarAudioSelection, InfoB
 				currref = self.playlist.getServiceRefList()[idx]
 				text = self.getIdentifier(currref)
 				text = ">"+text
-				ext = text[-4:].lower()
+				try:
+					import os
+					nameext = os.path.splitext(text)
+					ext = nameext[1]
+				except: ext = text[-4:].lower()
 
 				# FIXME: the information if the service contains video (and we should hide our window) should com from the service instead 
 				if ext not in audio_extensions and not self.isAudioCD:
@@ -901,11 +907,11 @@ class MediaPlayer(Screen, InfoBarBase, InfoBarSeek, InfoBarAudioSelection, InfoB
 
 	def unPauseService(self):
 		self.setSeekState(self.SEEK_STATE_PLAY)
-		
+
 	def subtitleSelection(self):
-		from Screens.Subtitles import Subtitles
-		self.session.open(Subtitles, self)
-	
+		from Screens.AudioSelection import SubtitleSelection
+		self.session.open(SubtitleSelection, self)
+
 	def hotplugCB(self, dev, media_state):
 		if dev == harddiskmanager.getCD():
 			if media_state == "1":
@@ -925,12 +931,17 @@ class MediaPlayer(Screen, InfoBarBase, InfoBarSeek, InfoBarAudioSelection, InfoB
 					self.clear_playlist()
 
 class MediaPlayerLCDScreen(Screen):
-	skin = """
-	<screen position="0,0" size="132,64" title="LCD Text">
+	skin = (
+	"""<screen name="MediaPlayerLCDScreen" position="0,0" size="132,64" id="1">
 		<widget name="text1" position="4,0" size="132,35" font="Regular;16"/>
 		<widget name="text3" position="4,36" size="132,14" font="Regular;10"/>
 		<widget name="text4" position="4,49" size="132,14" font="Regular;10"/>
-	</screen>"""
+	</screen>""",
+	"""<screen name="MediaPlayerLCDScreen" position="0,0" size="96,64" id="2">
+		<widget name="text1" position="0,0" size="96,35" font="Regular;14"/>
+		<widget name="text3" position="0,36" size="96,14" font="Regular;10"/>
+		<widget name="text4" position="0,49" size="96,14" font="Regular;10"/>
+	</screen>""")
 
 	def __init__(self, session, parent):
 		Screen.__init__(self, session)
@@ -1036,6 +1047,6 @@ def filescan(**kwargs):
 from Plugins.Plugin import PluginDescriptor
 def Plugins(**kwargs):
 	return [
-		PluginDescriptor(name = "MediaPlayer", description = "Play back media files", where = PluginDescriptor.WHERE_MENU, fnc = menu),
-		PluginDescriptor(name = "MediaPlayer", where = PluginDescriptor.WHERE_FILESCAN, fnc = filescan)
+		PluginDescriptor(name = "MediaPlayer", description = "Play back media files", where = PluginDescriptor.WHERE_MENU, needsRestart = False, fnc = menu),
+		PluginDescriptor(name = "MediaPlayer", where = PluginDescriptor.WHERE_FILESCAN, needsRestart = False, fnc = filescan)
 	]

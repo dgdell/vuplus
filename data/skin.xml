@@ -46,21 +46,6 @@
 			<pixmap pos="bpBottomRight" filename="skin_default/b_br.png" />
 		</borderset>
 	</windowstyle>
-	<!-- Main screen colors (id=1 LCD) -->
-	<windowstyle type="skinned" id="1">
-		<color name="Background" color="#000000" />
-		<color name="LabelForeground" color="#ffffff" />
-		<color name="ListboxBackground" color="#000000" />
-		<color name="ListboxForeground" color="#ffffff" />
-		<color name="ListboxSelectedBackground" color="#000000" />
-		<color name="ListboxSelectedForeground" color="#ffffff" />
-		<color name="ListboxMarkedBackground" color="#000000" />
-		<color name="ListboxMarkedForeground" color="#ffffff" />
-		<color name="ListboxMarkedAndSelectedBackground" color="#000000" />
-		<color name="ListboxMarkedAndSelectedForeground" color="#ffffff" />
-		<color name="WindowTitleForeground" color="#ffffff" />
-		<color name="WindowTitleBackground" color="#000000" />
-	</windowstyle>
 	<!-- Fonts -->
 	<fonts>
 		<!-- <font filename="md_khmurabi_10.ttf" name="Regular" scale="90" /> -->
@@ -147,7 +132,7 @@
 			<convert type="ConditionalShowHide" />
 		</widget>
 		<!-- Crypt icon (encrypted service?) -->
-		<ePixmap position="563,48" zPosition="0" size="107,15" pixmap="skin_default/icons/icons_off.png" />
+		<ePixmap position="563,48" zPosition="0" size="80,15" pixmap="skin_default/icons/icons_off.png" />		
 		<widget source="session.CurrentService" render="Pixmap" pixmap="skin_default/icons/icon_crypt.png" position="563,48" zPosition="1" size="12,16" alphatest="on">
 			<convert type="ServiceInfo">IsCrypted</convert>
 			<convert type="ConditionalShowHide" />
@@ -163,10 +148,10 @@
 			<convert type="ConditionalShowHide" />
 		</widget>
 		<!-- Audio icon (is there multichannel audio?) -->
-		<widget source="session.CurrentService" render="Pixmap" pixmap="skin_default/icons/icon_dolby.png" position="645,48" zPosition="1" size="26,16" alphatest="on">
+<!--	<widget source="session.CurrentService" render="Pixmap" pixmap="skin_default/icons/icon_dolby.png" position="645,48" zPosition="1" size="26,16" alphatest="on">
 			<convert type="ServiceInfo">IsMultichannel</convert>
 			<convert type="ConditionalShowHide" />
-		</widget>
+		</widget>	-->
 		<!-- Progressbar (current event duration)-->
 		<ePixmap pixmap="skin_default/progress_bg.png" position="48,77" size="84,7" transparent="1" alphatest="on" />
 		<widget source="session.Event_Now" render="Progress" pixmap="skin_default/progress_small.png" position="50,78" zPosition="1" size="80,5" transparent="1">

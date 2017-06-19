@@ -15,6 +15,7 @@
 #include <lib/base/object.h>
 #include <lib/base/ebase.h>
 #include <lib/base/elock.h>
+#include <lib/base/itssource.h>
 #include <lib/service/service.h>
 #include <libsig_comp.h>
 #include <connection.h>
@@ -457,9 +458,8 @@ SWIG_IGNORE(iDVBFrontend);
 class iDVBFrontend: public iDVBFrontend_ENUMS, public iObject
 {
 public:
-	virtual RESULT getFrontendType(int &SWIG_OUTPUT)=0;
 	virtual RESULT tune(const iDVBFrontendParameters &where)=0;
-	virtual int closeFrontend(bool force = false)=0;
+	virtual int closeFrontend(bool force = false, bool no_delayed = false)=0;
 	virtual void reopenFrontend()=0;
 #ifndef SWIG
 	virtual RESULT connectStateChange(const Slot1<void,iDVBFrontend*> &stateChange, ePtr<eConnection> &connection)=0;
@@ -471,7 +471,7 @@ public:
 	virtual RESULT sendToneburst(int burst)=0;
 #ifndef SWIG
 	virtual RESULT setSEC(iDVBSatelliteEquipmentControl *sec)=0;
-	virtual RESULT setSecSequence(const eSecCommandList &list)=0;
+	virtual RESULT setSecSequence(eSecCommandList &list)=0;
 #endif
 	virtual int readFrontendData(int type)=0;
 	virtual void getFrontendStatus(SWIG_PYOBJECT(ePyObject) dest)=0;
@@ -491,6 +491,7 @@ class iDVBSatelliteEquipmentControl: public iObject
 {
 public:
 	virtual RESULT prepare(iDVBFrontend &frontend, FRONTENDPARAMETERS &parm, const eDVBFrontendParametersSatellite &sat, int frontend_id, unsigned int timeout)=0;
+	virtual void prepareTurnOffSatCR(iDVBFrontend &frontend)=0;
 	virtual int canTune(const eDVBFrontendParametersSatellite &feparm, iDVBFrontend *fe, int frontend_id, int *highest_score_lnb=0)=0;
 	virtual void setRotorMoving(int slotid, bool)=0;
 };
@@ -508,6 +509,7 @@ public:
 		/* direct frontend access for raw channels and/or status inquiries. */
 	virtual SWIG_VOID(RESULT) getFrontend(ePtr<iDVBFrontend> &SWIG_OUTPUT)=0;
 	virtual RESULT requestTsidOnid(SWIG_PYOBJECT(ePyObject) callback) { return -1; }
+	virtual int reserveDemux() { return -1; }
 #ifndef SWIG
 	enum
 	{
@@ -603,6 +605,10 @@ public:
 	virtual RESULT playFile(const char *file) = 0;
 	virtual void stopFile() = 0;
 	
+	/* new interface */
+	virtual RESULT playSource(ePtr<iTsSource> &source, const char *priv=NULL) = 0;
+	virtual void stopSource() = 0;
+	
 	virtual void setCueSheet(eCueSheet *cuesheet) = 0;
 	
 	virtual RESULT getLength(pts_t &pts) = 0;
@@ -629,6 +635,7 @@ public:
 	virtual RESULT getSTC(pts_t &pts, int num=0)=0;
 	virtual RESULT getCADemuxID(uint8_t &id)=0;
 	virtual RESULT flush()=0;
+	virtual int openDVR(int flags)=0;
 };
 
 #if HAVE_DVB_API_VERSION < 3 && !defined(VIDEO_EVENT_SIZE_CHANGED)
@@ -643,7 +650,7 @@ public:
 		/** Set Displayed Video PID and type */
 	virtual RESULT setVideoPID(int vpid, int type)=0;
 
-	enum { af_MPEG, af_AC3, af_DTS, af_AAC };
+	enum { af_MPEG, af_AC3, af_DTS, af_AAC, af_DTSHD };
 		/** Set Displayed Audio PID and type */
 	virtual RESULT setAudioPID(int apid, int type)=0;
 
